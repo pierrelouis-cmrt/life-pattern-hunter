@@ -17,19 +17,19 @@ COLS = 24
 CELL_SIZE = 24
 TOROIDAL_BORDERS = False
 
-DEFAULT_MAX_STEPS = 90
+DEFAULT_MAX_STEPS = 48
 DEFAULT_PERIOD = {
-    "Exploration": 90,
-    "Soup Hunter": 110,
-    "Methuselah Lab": 140,
-    "Emitter / Ash": 100,
-    "Weird Stable": 120,
+    "Exploration": 50,
+    "Soup Hunter": 60,
+    "Methuselah Lab": 80,
+    "Emitter / Ash": 60,
+    "Weird Stable": 70,
     "Still life": 1,
     "Oscillator": 2,
     "Glider": 4,
     "Spaceship": 4,
-    "Methuselah": 90,
-    "Novelty": 70,
+    "Methuselah": 80,
+    "Novelty": 50,
 }
 
 TARGETS = [
@@ -63,17 +63,17 @@ BASE_CANDIDATE_SIZE = 12
 WIDE_CANDIDATE_SIZE = 16
 PLAYBACK_DELAY_MS = 220
 SOLVER_DELAY_MS = 20
-SOLVER_ITERATIONS_PER_TICK = 2
+SOLVER_ITERATIONS_PER_TICK = 1
 
 
 # ============================================================
 #  PARAMETRES DE L'ALGORITHME GENETIQUE
 # ============================================================
 
-POPULATION_SIZE = 150
-ELITE_COUNT = 16
+POPULATION_SIZE = 60
+ELITE_COUNT = 8
 MAX_GENETIC_GENERATIONS = 650
-LOCAL_IMPROVEMENT_TRIES = 18
+LOCAL_IMPROVEMENT_TRIES = 3
 INITIAL_DENSITIES = [0.06, 0.10, 0.14, 0.20, 0.28, 0.36]
 BASE_MUTATION_RATE = 0.018
 RANDOM_INJECTION_RATE = 0.08
@@ -81,6 +81,12 @@ MAX_CACHE_SIZE = 12000
 HALL_OF_FAME_SIZE = 12
 ARCHIVE_MAX_BEHAVIORS = 900
 NOVELTY_NEIGHBORS = 10
+FAST_EVAL_STEPS = 10
+FULL_EVAL_COUNT = 10
+SPACESHIP_PERIODS = (4, 5, 6, 8, 10, 12)
+DEEP_POPULATION_SIZE = 150
+DEEP_FULL_EVAL_COUNT = 34
+DEEP_LOCAL_TRIES = 14
 MAX_REASONABLE_POPULATION = 135
 EXPLOSION_POPULATION_LIMIT = 190
 
@@ -93,6 +99,8 @@ BG_COLOR = "#f5f1e8"
 LIVE_COLOR = "#181818"
 PLAYBACK_LIVE_COLOR = "#2563eb"
 CANDIDATE_ZONE_COLOR = "#ebe4d6"
+RECENT_CHANGE_COLOR = "#7dd3fc"
+ARCHIVE_COLOR = "#a7f3d0"
 TEXT_COLOR = "#222222"
 IMPORTANT_TEXT_COLOR = "#6c4ab6"
 UI_BG = "#f8fafc"
@@ -153,6 +161,9 @@ class SearchConfig:
     injection_rate: float = RANDOM_INJECTION_RATE
     local_tries: int = LOCAL_IMPROVEMENT_TRIES
     zone: tuple = None
+    fast_steps: int = FAST_EVAL_STEPS
+    full_eval_count: int = FULL_EVAL_COUNT
+    deep: bool = False
 
 
 @dataclass
@@ -174,6 +185,7 @@ class Evaluation:
     rarity_score: float = 0.0
     aesthetic_score: float = 0.0
     generation_found: int = 0
+    full_evaluated: bool = True
 
 
 @dataclass
@@ -224,6 +236,39 @@ class Discovery:
     generation: int
 
 
+@dataclass
+class CandidateTrace:
+    rank: int
+    score: float
+    quality_score: float
+    novelty_score: float
+    kind: str
+    period: int
+    lifespan: int
+    population: int
+    niche: tuple
+
+
+@dataclass
+class GenerationTrace:
+    generation: int
+    evaluated_count: int
+    full_eval_count: int
+    archive_filled: int
+    archive_inserted: int
+    best_score: float
+    average_score: float
+    average_novelty: float
+    diversity: int
+    stagnation: int
+    parents_from_archive: int
+    parents_from_population: int
+    mutation_rate: float
+    injection_count: int
+    best_candidates: list
+    explanation: str
+
+
 # ============================================================
 #  ETAT GLOBAL DE L'INTERFACE
 # ============================================================
@@ -239,6 +284,9 @@ state = {
     "search": None,
     "last_metrics": None,
     "archive_view_index": 0,
+    "generation_trace": None,
+    "previous_display_grid": None,
+    "auto_preview": True,
 }
 
 ui = {
@@ -247,6 +295,7 @@ ui = {
     "period_entry": None,
     "max_steps_entry": None,
     "status_label": None,
+    "trace_label": None,
     "search_button": None,
     "stop_button": None,
 }
@@ -578,19 +627,17 @@ def classify_history(history):
             metrics.lifespan = generation - 1
             return metrics
 
-    for b in range(1, len(history)):
-        info_b = infos[b]
-        if info_b.population == 0:
+    seen_shapes = {}
+    for generation, info in enumerate(infos):
+        if info.population == 0:
             continue
-        for a in range(0, b):
-            info_a = infos[a]
-            if info_a.population == 0 or info_a.cells != info_b.cells:
-                continue
-
-            period = b - a
+        earlier = seen_shapes.get(info.cells)
+        if earlier is not None:
+            a, info_a = earlier
+            period = generation - a
             shift = (
-                info_b.origin[0] - info_a.origin[0],
-                info_b.origin[1] - info_a.origin[1],
+                info.origin[0] - info_a.origin[0],
+                info.origin[1] - info_a.origin[1],
             )
             metrics.generation = a
             metrics.period = period
@@ -615,6 +662,7 @@ def classify_history(history):
 
             metrics.kind = "glider" if is_glider_signature(period, shift) else "spaceship"
             return metrics
+        seen_shapes[info.cells] = (generation, info)
 
     if metrics.max_population >= EXPLOSION_POPULATION_LIMIT:
         metrics.kind = "exploding"
@@ -828,22 +876,53 @@ def score_glider(grid, config, history, metrics):
 
 
 def score_spaceship(grid, config, history, metrics):
-    period = max(2, config.period)
-    short_history = simulate_history(grid, period)
-    initial_info = normalize_pattern(short_history[0])
-    final_info = normalize_pattern(short_history[period])
+    initial_info = normalize_pattern(history[0])
     if initial_info.population == 0:
         return 10000
 
-    shape_error = 0 if initial_info.cells == final_info.cells else cell_difference(short_history[0], short_history[period])
-    moved = initial_info.origin != final_info.origin
-    score = shape_error * 12 + compactness_penalty(grid)
-    if moved:
-        score -= 80
+    max_period = min(max(SPACESHIP_PERIODS), len(history) - 1)
+    if max_period < 4:
+        history = simulate_history(grid, max(SPACESHIP_PERIODS))
+        max_period = max(SPACESHIP_PERIODS)
+
+    best_period_score = 10000
+    for period in SPACESHIP_PERIODS:
+        if period > max_period:
+            continue
+        final_info = normalize_pattern(history[period])
+        if final_info.population == 0:
+            continue
+        shift = (
+            final_info.origin[0] - initial_info.origin[0],
+            final_info.origin[1] - initial_info.origin[1],
+        )
+        same_shape = initial_info.cells == final_info.cells
+        shape_error = 0 if same_shape else cell_difference(history[0], history[period])
+        moved = shift != (0, 0)
+        candidate_score = shape_error * 12
+        candidate_score += 220 if not moved else -80
+        candidate_score += abs(initial_info.population - final_info.population) * 4
+        if same_shape and moved:
+            candidate_score -= 100
+        if is_glider_signature(period, shift) and initial_info.population == 5 and initial_info.area <= 9:
+            candidate_score += 650
+        best_period_score = min(best_period_score, candidate_score)
+
+    score = best_period_score + compactness_penalty(grid)
+    score -= min(initial_info.population, 24) * 3
+    score -= min(initial_info.area, 80) * 0.8
+    if initial_info.population <= 5:
+        score += 280
+    if initial_info.area <= 9:
+        score += 150
+    if metrics.kind == "spaceship":
+        score -= 260
     else:
-        score += 180
-    if metrics.kind in ("spaceship", "glider"):
-        score -= 150
+        score += 420
+    if metrics.kind == "glider":
+        score += 800
+    if metrics.kind in ("still_life", "oscillator", "stabilized", "died", "empty"):
+        score += 220
     return score + population_explosion_penalty(metrics)
 
 
@@ -1025,6 +1104,43 @@ def evaluate_candidate(grid, config, cache, archive=None):
     )
 
 
+def evaluate_candidate_fast(grid, config, cache, archive=None):
+    steps = min(config.max_steps, max(2, config.fast_steps))
+    if config.target == "Spaceship":
+        steps = min(config.max_steps, max(steps, max(SPACESHIP_PERIODS)))
+    key = (config.target, config.period, steps, "fast", grid_key(grid))
+    if key in cache:
+        cached = cache[key]
+        history = [copy_grid(item) for item in cached.history]
+        metrics = cached.metrics
+        behavior = cached.behavior
+    else:
+        history = simulate_history(grid, steps)
+        metrics = classify_history(history)
+        behavior = behavior_vector(metrics)
+        cache[key] = Evaluation(0, copy_grid(grid), [copy_grid(item) for item in history], metrics, pattern_signature(metrics), behavior, full_evaluated=False)
+        limit_cache(cache)
+
+    quality = quality_score_for_target(grid, config, history, metrics)
+    novelty = novelty_score(behavior, archive)
+    rarity = rarity_score(behavior, archive)
+    aesthetic = aesthetic_value(metrics)
+    score = combined_score(config, quality, novelty, rarity, aesthetic)
+    return Evaluation(
+        score,
+        copy_grid(grid),
+        [copy_grid(item) for item in history],
+        metrics,
+        pattern_signature(metrics),
+        behavior,
+        quality,
+        novelty,
+        rarity,
+        aesthetic,
+        full_evaluated=False,
+    )
+
+
 # ============================================================
 #  OPERATEURS GENETIQUES
 # ============================================================
@@ -1039,11 +1155,11 @@ def place_shape(shape, top, left):
     return grid
 
 
-def classic_seed_candidates(zone):
+def classic_seed_candidates(zone, target=None):
     top, _, left, _ = zone
     top += 4
     left += 4
-    return [
+    seeds = [
         place_shape([(0, 0), (0, 1), (1, 0), (1, 1)], top, left),
         place_shape([(0, 0), (0, 1), (0, 2)], top, left),
         place_shape([(0, 1), (1, 2), (2, 0), (2, 1), (2, 2)], top, left),
@@ -1051,6 +1167,14 @@ def classic_seed_candidates(zone):
         place_shape([(0, 1), (1, 0), (1, 1), (2, 1), (2, 2)], top, left),
         place_shape([(0, 1), (0, 2), (1, 0), (1, 1), (2, 1)], top, left),
     ]
+    if target == "Spaceship":
+        seeds.extend([
+            place_shape([(0, 0), (0, 3), (1, 4), (2, 0), (2, 4), (3, 1), (3, 2), (3, 3), (3, 4)], top, left),
+            place_shape([(0, 1), (0, 4), (1, 0), (2, 0), (2, 4), (3, 0), (3, 1), (3, 2), (3, 3)], top, left),
+        ])
+    if target == "Spaceship":
+        seeds = [grid for grid in seeds if classify_grid(grid, 8).kind != "glider"]
+    return seeds
 
 
 def random_uniform_candidate(zone, density):
@@ -1381,7 +1505,7 @@ def create_initial_population(config, manual_grid=None):
     if manual_grid is not None and not is_empty(manual_grid):
         population.append(trim_to_zone(manual_grid, config.zone))
 
-    population.extend(classic_seed_candidates(config.zone))
+    population.extend(classic_seed_candidates(config.zone, config.target))
     for density in INITIAL_DENSITIES:
         for style in ("uniform", "gaussian", "symmetric"):
             for _ in range(3):
@@ -1477,54 +1601,132 @@ def update_hall_of_fame(hall, evaluation):
     return diverse[:HALL_OF_FAME_SIZE]
 
 
-def make_config(target, period, max_steps):
+def make_config(target, period, max_steps, deep=False):
     target = target if target in TARGETS else "Glider"
     period = max(1, period)
     max_steps = max(2, max_steps)
-    if target in ("Exploration", "Soup Hunter", "Methuselah Lab", "Emitter / Ash", "Weird Stable"):
+    if target == "Spaceship":
+        max_steps = max(max_steps, max(SPACESHIP_PERIODS))
+    if deep and target in ("Exploration", "Soup Hunter", "Methuselah Lab", "Emitter / Ash", "Weird Stable"):
         max_steps = max(max_steps, DEFAULT_PERIOD[target])
-    return SearchConfig(target=target, period=period, max_steps=max_steps, zone=zone_for_target(target))
+    return SearchConfig(
+        target=target,
+        period=period,
+        max_steps=max_steps,
+        population_size=DEEP_POPULATION_SIZE if deep else POPULATION_SIZE,
+        elite_count=ELITE_COUNT + 6 if deep else ELITE_COUNT,
+        local_tries=DEEP_LOCAL_TRIES if deep else LOCAL_IMPROVEMENT_TRIES,
+        zone=zone_for_target(target),
+        fast_steps=max(FAST_EVAL_STEPS, max(SPACESHIP_PERIODS)) if target == "Spaceship" else FAST_EVAL_STEPS,
+        full_eval_count=DEEP_FULL_EVAL_COUNT if deep else FULL_EVAL_COUNT,
+        deep=deep,
+    )
 
 
-def initialize_search(target, period, max_steps, manual_grid=None):
-    config = make_config(target, period, max_steps)
+def initialize_search(target, period, max_steps, manual_grid=None, deep=False):
+    config = make_config(target, period, max_steps, deep)
     state["search"] = {
         "config": config,
         "population": create_initial_population(config, manual_grid),
         "generation": 0,
         "best": None,
         "cache": {},
+        "fast_cache": {},
         "stagnation": 0,
         "archive": make_archive(),
         "archive_index": 0,
     }
+    state["generation_trace"] = None
     state["search_active"] = True
+
+
+def candidate_trace(rank, evaluation):
+    return CandidateTrace(
+        rank,
+        evaluation.score,
+        evaluation.quality_score,
+        evaluation.novelty_score,
+        evaluation.metrics.kind,
+        evaluation.metrics.period,
+        evaluation.metrics.lifespan,
+        evaluation.metrics.initial_population,
+        evaluation.behavior.niche,
+    )
+
+
+def explain_generation_text(trace):
+    if trace is None:
+        return "Aucune generation genetique n'a encore ete evaluee."
+    best = trace.best_candidates[0] if trace.best_candidates else None
+    best_text = "aucun meilleur candidat"
+    if best is not None:
+        best_text = "{} score {:.1f}, Q {:.1f}, N {:.2f}, periode {}, vie {}".format(
+            best.kind,
+            best.score,
+            best.quality_score,
+            best.novelty_score,
+            best.period,
+            best.lifespan,
+        )
+    return (
+        "Generation {gen}: {evaluated} candidats filtres rapidement, {full} evaluations completes. "
+        "Archive QD: {archive} niches, {inserted} insertions. "
+        "Selection: {pa} parents depuis l'archive, {pp} depuis la population. "
+        "Mutation moyenne {mut:.3f}, injections {inj}. Meilleur: {best}."
+    ).format(
+        gen=trace.generation,
+        evaluated=trace.evaluated_count,
+        full=trace.full_eval_count,
+        archive=trace.archive_filled,
+        inserted=trace.archive_inserted,
+        pa=trace.parents_from_archive,
+        pp=trace.parents_from_population,
+        mut=trace.mutation_rate,
+        inj=trace.injection_count,
+        best=best_text,
+    )
 
 
 def advance_search_one_generation():
     search = state["search"]
     config = search["config"]
     cache = search["cache"]
+    fast_cache = search.setdefault("fast_cache", {})
     archive = search["archive"]
 
-    evaluated = [evaluate_candidate(candidate, config, cache, archive) for candidate in search["population"]]
-    evaluated.sort(key=lambda item: item.score)
-    for item in evaluated:
-        archive_insert(archive, item, search["generation"])
+    fast_evaluated = [
+        evaluate_candidate_fast(candidate, config, fast_cache, archive)
+        for candidate in search["population"]
+    ]
+    fast_evaluated.sort(key=lambda item: item.score)
+    full_candidates = fast_evaluated[:min(config.full_eval_count, len(fast_evaluated))]
 
-    improved = local_improvement(evaluated[0], config, cache, archive)
-    if improved.score < evaluated[0].score:
-        evaluated.insert(0, improved)
-        archive_insert(archive, improved, search["generation"])
-    else:
-        evaluated.append(improved)
-        evaluated.sort(key=lambda item: item.score)
+    evaluated = [
+        evaluate_candidate(candidate.grid, config, cache, archive)
+        for candidate in full_candidates
+    ]
+    evaluated.sort(key=lambda item: item.score)
+    archive_insertions = 0
+    for item in evaluated:
+        if archive_insert(archive, item, search["generation"]):
+            archive_insertions += 1
+
+    if config.local_tries > 0 and evaluated:
+        improved = local_improvement(evaluated[0], config, cache, archive)
+        if improved.score < evaluated[0].score:
+            evaluated.insert(0, improved)
+            if archive_insert(archive, improved, search["generation"]):
+                archive_insertions += 1
+        else:
+            evaluated.append(improved)
+            evaluated.sort(key=lambda item: item.score)
 
     elites = archive_elites(archive)
     current_best = min([evaluated[0]] + elites[:8], key=lambda item: item.score)
 
     if search["best"] is None or current_best.score < search["best"].score:
         search["best"] = current_best
+        state["previous_display_grid"] = copy_grid(state["display_grid"]) if state["display_grid"] is not None else None
         state["grid"] = copy_grid(current_best.grid)
         state["display_grid"] = copy_grid(current_best.grid)
         state["history"] = [copy_grid(item) for item in current_best.history]
@@ -1538,7 +1740,7 @@ def advance_search_one_generation():
         state["search_active"] = False
         return
 
-    if current_best.score <= 0.01 and config.target not in ("Methuselah", "Novelty", "Exploration", "Soup Hunter", "Methuselah Lab", "Emitter / Ash", "Weird Stable"):
+    if current_best.score <= 0.01 and config.target not in ("Spaceship", "Methuselah", "Novelty", "Exploration", "Soup Hunter", "Methuselah Lab", "Emitter / Ash", "Weird Stable"):
         state["search_active"] = False
         return
 
@@ -1556,22 +1758,51 @@ def advance_search_one_generation():
     for item in elites[:min(12, len(elites))]:
         next_population.append(mutate_structural(item.grid, config.zone, mutation_rate * 0.7))
 
-    for _ in range(int(config.population_size * injection_rate)):
+    injection_count = int(config.population_size * injection_rate)
+    for _ in range(injection_count):
         style = None
         if config.target == "Soup Hunter":
             style = random.choice(["uniform", "gaussian", "symmetric"])
         next_population.append(random_candidate(config.zone, style=style))
 
+    parents_from_archive = 0
+    parents_from_population = 0
     while len(next_population) < config.population_size:
         parent_a = select_archive_parent(archive) if random.random() < 0.65 else None
         parent_b = select_archive_parent(archive) if random.random() < 0.65 else None
         if parent_a is None:
             parent_a = tournament(evaluated)
+            parents_from_population += 1
+        else:
+            parents_from_archive += 1
         if parent_b is None:
             parent_b = tournament(evaluated)
+            parents_from_population += 1
+        else:
+            parents_from_archive += 1
         child = crossover_creative(parent_a, parent_b, config.zone)
         next_population.append(mutate_structural(child, config.zone, mutation_rate))
 
+    traces = [candidate_trace(index + 1, item) for index, item in enumerate((evaluated + elites)[:5])]
+    state["generation_trace"] = GenerationTrace(
+        search["generation"],
+        len(fast_evaluated),
+        len(full_candidates),
+        archive.filled(),
+        archive_insertions,
+        current_best.score,
+        sum(item.score for item in fast_evaluated) / max(1, len(fast_evaluated)),
+        sum(item.novelty_score for item in fast_evaluated) / max(1, len(fast_evaluated)),
+        len(set(item.signature for item in fast_evaluated)),
+        search["stagnation"],
+        parents_from_archive,
+        parents_from_population,
+        mutation_rate,
+        injection_count,
+        traces,
+        "",
+    )
+    state["generation_trace"].explanation = explain_generation_text(state["generation_trace"])
     search["population"] = unique_population(next_population, config)
     search["generation"] += 1
 
@@ -1674,7 +1905,7 @@ def create_interface(board):
     if ui["panel"] is not None and ui["panel"].winfo_exists():
         ui["panel"].destroy()
 
-    panel = tk.Frame(root, bg=UI_BG, width=245)
+    panel = tk.Frame(root, bg=UI_BG, width=285)
     panel.grid(row=0, column=1, rowspan=3, sticky="ns", padx=(8, 10), pady=10)
     panel.grid_propagate(False)
     ui["panel"] = panel
@@ -1703,8 +1934,11 @@ def create_interface(board):
     ui["max_steps_entry"].insert(0, str(DEFAULT_MAX_STEPS))
     ui["max_steps_entry"].pack(fill="x", padx=8, pady=(2, 10))
 
-    ui["search_button"] = create_button(panel, "Explorer (S)", lambda: start_search(board), PRIMARY_BUTTON_BG)
+    ui["search_button"] = create_button(panel, "Fast search (S)", lambda: start_search(board), PRIMARY_BUTTON_BG)
     create_button(panel, "Deep run", lambda: start_deep_run(board), PRIMARY_BUTTON_BG)
+    create_button(panel, "Pause", lambda: stop_all(board))
+    create_button(panel, "Explain", lambda: explain_current_generation(board))
+    create_button(panel, "Auto preview", lambda: toggle_auto_preview(board))
     ui["stop_button"] = create_button(panel, "Arreter (Esc)", lambda: stop_all(board))
 
     section(panel, "Motif")
@@ -1728,6 +1962,16 @@ def create_interface(board):
         anchor="w",
     )
     ui["status_label"].pack(fill="x", padx=8, pady=(12, 0))
+    ui["trace_label"] = tk.Label(
+        panel,
+        text="Processus genetique en attente.",
+        bg=UI_BG,
+        fg="#334155",
+        justify="left",
+        wraplength=245,
+        anchor="w",
+    )
+    ui["trace_label"].pack(fill="x", padx=8, pady=(10, 0))
     update_interface()
 
 
@@ -1761,6 +2005,7 @@ def update_interface():
                 describe_metrics(best.metrics),
             )
         status.configure(text=text)
+        update_trace_label()
         return
 
     if state["playback_active"] and state["history"]:
@@ -1777,6 +2022,38 @@ def update_interface():
         ))
     else:
         status.configure(text="Dessinez un motif, classifiez-le ou lancez la recherche.")
+    update_trace_label()
+
+
+def update_trace_label():
+    trace_label = ui.get("trace_label")
+    if trace_label is None or not trace_label.winfo_exists():
+        return
+    trace = state.get("generation_trace")
+    if trace is None:
+        trace_label.configure(text="Processus genetique en attente.")
+        return
+    best_lines = []
+    for item in trace.best_candidates[:3]:
+        best_lines.append("#{} {} sc {:.1f} N {:.2f}".format(item.rank, item.kind, item.score, item.novelty_score))
+    trace_label.configure(text=(
+        "Processus genetique\n"
+        "Eval rapide: {} | completes: {}\n"
+        "Archive: {} niches | +{}\n"
+        "Moy score {:.1f} | N moy {:.2f}\n"
+        "Diversite {} | stagnation {}\n"
+        "{}"
+    ).format(
+        trace.evaluated_count,
+        trace.full_eval_count,
+        trace.archive_filled,
+        trace.archive_inserted,
+        trace.average_score,
+        trace.average_novelty,
+        trace.diversity,
+        trace.stagnation,
+        "\n".join(best_lines),
+    ))
 
 
 def display_line(board, row, text, color=TEXT_COLOR):
@@ -1791,13 +2068,26 @@ def active_zone():
 
 def refresh_board(board):
     grid = state["display_grid"] if state["display_grid"] is not None else state["grid"]
+    previous = state.get("previous_display_grid")
     top, bottom, left, right = active_zone()
+    archived = False
+    current_key = grid_key(grid)
+    for discovery in current_archive_discoveries():
+        if grid_key(discovery.grid) == current_key:
+            archived = True
+            break
 
     for i in range(ROWS):
         for j in range(COLS):
             color = ""
             if grid[i][j] == 1:
-                color = PLAYBACK_LIVE_COLOR if state["playback_active"] else LIVE_COLOR
+                changed = previous is not None and previous[i][j] != grid[i][j]
+                if changed:
+                    color = RECENT_CHANGE_COLOR
+                elif archived:
+                    color = ARCHIVE_COLOR
+                else:
+                    color = PLAYBACK_LIVE_COLOR if state["playback_active"] else LIVE_COLOR
             elif top <= i <= bottom and left <= j <= right:
                 color = CANDIDATE_ZONE_COLOR
             board.setBgColor(i, j, color)
@@ -1809,13 +2099,14 @@ def refresh_info(board):
         config = search["config"]
         best = search["best"]
         best_score = "..." if best is None else "{:.2f}".format(best.score)
-        line = "Recherche: {} | gen {} / {} | score {} | niches {} | cache {}".format(
+        line = "Recherche: {} | gen {} / {} | score {} | niches {} | cache {} | {}".format(
             TARGET_FR[config.target],
             search["generation"],
             config.max_generations,
             best_score,
             search["archive"].filled(),
             len(search["cache"]),
+            "deep" if config.deep else "fast",
         )
     else:
         line = "Cible: {} | periode {} | analyse {} generations".format(
@@ -1838,7 +2129,9 @@ def refresh_info(board):
         ))
     else:
         display_line(board, 1, describe_metrics(metrics) if metrics else "Aucune classification")
-    display_line(board, 2, "S explorer | D deep | Espace lecture | N pas | C classifier | E export | 1-9/0/- cible")
+    display_line(board, 2, "S fast | D deep | Explain bouton | Auto preview {} | E export | 1-9/0/- cible".format(
+        "ON" if state["auto_preview"] else "OFF"
+    ))
 
     if state["history"]:
         display_line(board, 3, "Generation {} / {} | cellules vivantes {} | zone de recherche en beige".format(
@@ -1955,22 +2248,36 @@ def step_once(board):
     refresh_info(board)
 
 
-def start_search(board):
+def start_search(board, deep=False):
     stop_all(board)
-    initialize_search(current_target(), current_period(), current_max_steps(), state["grid"])
+    initialize_search(current_target(), current_period(), current_max_steps(), state["grid"], deep=deep)
     refresh_board(board)
     refresh_info(board)
     board.after(1, search_loop, board)
 
 
 def start_deep_run(board):
-    if ui["target_var"] is not None:
-        ui["target_var"].set(target_option("Exploration"))
     if ui["max_steps_entry"] is not None and ui["max_steps_entry"].winfo_exists():
         value = max(current_max_steps(), 160)
         ui["max_steps_entry"].delete(0, tk.END)
         ui["max_steps_entry"].insert(0, str(value))
-    start_search(board)
+    start_search(board, deep=True)
+
+
+def toggle_auto_preview(board):
+    state["auto_preview"] = not state["auto_preview"]
+    board.console("Auto preview:", "ON" if state["auto_preview"] else "OFF")
+    refresh_info(board)
+
+
+def advance_auto_preview():
+    if not state["auto_preview"] or not state["history"]:
+        return
+    if state["history_index"] < len(state["history"]) - 1:
+        state["history_index"] += 1
+    else:
+        state["history_index"] = 0
+    state["display_grid"] = copy_grid(state["history"][state["history_index"]])
 
 
 def search_loop(board):
@@ -1982,6 +2289,7 @@ def search_loop(board):
     for _ in range(SOLVER_ITERATIONS_PER_TICK):
         if state["search_active"]:
             advance_search_one_generation()
+    advance_auto_preview()
 
     refresh_board(board)
     refresh_info(board)
@@ -2000,6 +2308,14 @@ def export_current(board):
     board.console("RLE:")
     for line in grid_to_rle(grid).splitlines():
         board.console(line)
+
+
+def explain_current_generation(board):
+    text = explain_generation_text(state.get("generation_trace"))
+    board.console("=== EXPLICATION GENERATION ===")
+    for part in text.split(". "):
+        if part:
+            board.console(part.strip())
 
 
 def current_archive_discoveries():

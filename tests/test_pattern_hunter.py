@@ -17,6 +17,10 @@ def grid_from_shape(cells, top=10, left=10):
     return grid
 
 
+GLIDER = [(0, 1), (1, 2), (2, 0), (2, 1), (2, 2)]
+LWSS = [(0, 0), (0, 3), (1, 4), (2, 0), (2, 4), (3, 1), (3, 2), (3, 3), (3, 4)]
+
+
 class LifeClassifierTests(unittest.TestCase):
     def test_block_is_still_life(self):
         grid = grid_from_shape([(0, 0), (0, 1), (1, 0), (1, 1)])
@@ -35,7 +39,7 @@ class LifeClassifierTests(unittest.TestCase):
         self.assertEqual((0, 0), metrics.shift)
 
     def test_glider_is_detected_by_shifted_period(self):
-        grid = grid_from_shape([(0, 1), (1, 2), (2, 0), (2, 1), (2, 2)], top=8, left=8)
+        grid = grid_from_shape(GLIDER, top=8, left=8)
         metrics = hunter.classify_grid(grid, 8)
 
         self.assertEqual("glider", metrics.kind)
@@ -232,6 +236,122 @@ class GeneticSearchTests(unittest.TestCase):
 
         kinds = {cell.evaluation.metrics.kind for cell in archive.cells.values()}
         self.assertTrue(kinds - {"still_life", "oscillator", "glider"})
+
+    def test_fast_evaluation_keeps_basic_metrics(self):
+        config = hunter.SearchConfig(
+            target="Exploration",
+            period=hunter.DEFAULT_PERIOD["Exploration"],
+            max_steps=24,
+            fast_steps=8,
+            zone=hunter.zone_for_target("Exploration"),
+        )
+        grid = grid_from_shape([(0, 0), (0, 1), (1, 0), (1, 1)])
+        fast = hunter.evaluate_candidate_fast(grid, config, {}, hunter.make_archive())
+        full = hunter.evaluate_candidate(grid, config, {}, hunter.make_archive())
+
+        self.assertFalse(fast.full_evaluated)
+        self.assertTrue(full.full_evaluated)
+        self.assertEqual(full.metrics.kind, fast.metrics.kind)
+        self.assertEqual(full.metrics.initial_population, fast.metrics.initial_population)
+
+    def test_generation_only_fully_evaluates_top_k_candidates(self):
+        random.seed(111)
+        config = hunter.SearchConfig(
+            target="Exploration",
+            period=hunter.DEFAULT_PERIOD["Exploration"],
+            max_steps=18,
+            population_size=32,
+            elite_count=5,
+            max_generations=2,
+            local_tries=0,
+            zone=hunter.zone_for_target("Exploration"),
+            fast_steps=6,
+            full_eval_count=7,
+        )
+        hunter.state["search"] = {
+            "config": config,
+            "population": hunter.create_initial_population(config),
+            "generation": 0,
+            "best": None,
+            "cache": {},
+            "fast_cache": {},
+            "stagnation": 0,
+            "archive": hunter.make_archive(),
+            "archive_index": 0,
+        }
+        hunter.state["search_active"] = True
+
+        hunter.advance_search_one_generation()
+
+        self.assertEqual(7, hunter.state["generation_trace"].full_eval_count)
+        self.assertEqual(7, len(hunter.state["search"]["cache"]))
+        self.assertEqual(config.population_size, len(hunter.state["search"]["population"]))
+
+    def test_spaceship_mode_penalizes_default_glider(self):
+        config = hunter.make_config("Spaceship", 4, 20)
+        glider = grid_from_shape(GLIDER, top=8, left=8)
+        lwss = grid_from_shape(LWSS, top=8, left=8)
+        archive = hunter.make_archive()
+
+        glider_eval = hunter.evaluate_candidate(glider, config, {}, archive)
+        lwss_eval = hunter.evaluate_candidate(lwss, config, {}, archive)
+
+        self.assertEqual("glider", glider_eval.metrics.kind)
+        self.assertEqual("spaceship", lwss_eval.metrics.kind)
+        self.assertGreater(glider_eval.score, lwss_eval.score + 500)
+
+    def test_spaceship_seed_candidates_exclude_glider(self):
+        seeds = hunter.classic_seed_candidates(hunter.zone_for_target("Spaceship"), "Spaceship")
+        kinds = {hunter.classify_grid(seed, 8).kind for seed in seeds}
+
+        self.assertNotIn("glider", kinds)
+
+    def test_glider_mode_still_rewards_glider(self):
+        config = hunter.make_config("Glider", 4, 12)
+        glider = grid_from_shape(GLIDER, top=8, left=8)
+        evaluation = hunter.evaluate_candidate(glider, config, {}, hunter.make_archive())
+
+        self.assertEqual("glider", evaluation.metrics.kind)
+        self.assertLess(evaluation.quality_score, -100)
+
+    def test_generation_trace_explains_process(self):
+        trace = hunter.GenerationTrace(
+            generation=3,
+            evaluated_count=20,
+            full_eval_count=5,
+            archive_filled=4,
+            archive_inserted=2,
+            best_score=-12.0,
+            average_score=10.0,
+            average_novelty=0.5,
+            diversity=6,
+            stagnation=1,
+            parents_from_archive=7,
+            parents_from_population=9,
+            mutation_rate=0.02,
+            injection_count=3,
+            best_candidates=[
+                hunter.CandidateTrace(1, -12.0, 1.0, 0.7, "spaceship", 4, 12, 9, ("spaceship",))
+            ],
+            explanation="",
+        )
+        text = hunter.explain_generation_text(trace)
+
+        self.assertIn("Selection", text)
+        self.assertIn("Mutation", text)
+        self.assertIn("Archive QD", text)
+        self.assertIn("Meilleur", text)
+
+    def test_auto_preview_advances_without_changing_history_length(self):
+        hunter.state["auto_preview"] = True
+        hunter.state["history"] = [hunter.new_grid(0), grid_from_shape([(0, 0)])]
+        hunter.state["history_index"] = 0
+        before = len(hunter.state["history"])
+
+        hunter.advance_auto_preview()
+
+        self.assertEqual(before, len(hunter.state["history"]))
+        self.assertEqual(1, hunter.state["history_index"])
 
 
 if __name__ == "__main__":

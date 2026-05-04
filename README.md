@@ -21,8 +21,11 @@ python3 -m unittest discover -s tests -v
 
 - Clic gauche : inverse une cellule.
 - Clic droit : efface une cellule.
-- `S` : lancer ou arreter l'exploration.
-- `D` : lancer un deep run en mode Exploration avec plus de generations analysees.
+- `S` : lancer une recherche rapide et interactive.
+- `D` : lancer un deep run plus lent mais plus approfondi sur le mode courant.
+- `Pause` / `Esc` : arreter la recherche en cours.
+- `Explain` : expliquer dans la console la generation genetique courante.
+- `Auto preview` : activer ou desactiver la lecture automatique du meilleur motif pendant la recherche.
 - `Espace` : lire ou mettre en pause l'evolution.
 - `N` : avancer d'une generation.
 - `C` : classifier le motif courant.
@@ -41,7 +44,8 @@ La zone beige est la zone ou l'algorithme genetique fabrique les candidats.
 - `Methuselah Lab` : cherche de petits motifs qui restent actifs longtemps.
 - `Emitter / Ash` : favorise les fragments mobiles, evenements de type planeur et objets multiples.
 - `Weird Stable` : cherche des stabilisations grandes, asymetriques ou composites.
-- `Still life`, `Oscillator`, `Glider`, `Spaceship`, `Methuselah`, `Novelty` : modes cibles conserves.
+- `Spaceship` : cherche un vaisseau non-planeur ; le glider classique est volontairement penalise.
+- `Still life`, `Oscillator`, `Glider`, `Methuselah`, `Novelty` : modes cibles conserves.
 
 ## Algorithme
 
@@ -53,5 +57,7 @@ Le score final combine :
 - nouveaute : distance aux comportements deja vus ;
 - rarete : bonus aux niches peu visitees ;
 - esthetique : activite, mobilite, asymetrie et richesse des cendres.
+
+Pour rester interactif, chaque generation utilise deux niveaux d'evaluation : une evaluation rapide trie toute la population, puis seuls les meilleurs candidats recoivent une simulation complete. Le panneau lateral affiche les evaluations rapides/completes, les niches d'archive, la nouveaute moyenne, la stagnation et les meilleures decouvertes.
 
 La reproduction utilise des mutations structurelles : translation, duplication, miroir, rotation, erosion, densification, explosion locale et injection de fragments classiques.
