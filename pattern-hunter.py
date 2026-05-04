@@ -19,6 +19,11 @@ TOROIDAL_BORDERS = False
 
 DEFAULT_MAX_STEPS = 90
 DEFAULT_PERIOD = {
+    "Exploration": 90,
+    "Soup Hunter": 110,
+    "Methuselah Lab": 140,
+    "Emitter / Ash": 100,
+    "Weird Stable": 120,
     "Still life": 1,
     "Oscillator": 2,
     "Glider": 4,
@@ -27,8 +32,25 @@ DEFAULT_PERIOD = {
     "Novelty": 70,
 }
 
-TARGETS = ["Still life", "Oscillator", "Glider", "Spaceship", "Methuselah", "Novelty"]
+TARGETS = [
+    "Exploration",
+    "Soup Hunter",
+    "Methuselah Lab",
+    "Emitter / Ash",
+    "Weird Stable",
+    "Still life",
+    "Oscillator",
+    "Glider",
+    "Spaceship",
+    "Methuselah",
+    "Novelty",
+]
 TARGET_FR = {
+    "Exploration": "exploration creative",
+    "Soup Hunter": "soupes aleatoires",
+    "Methuselah Lab": "laboratoire methuselah",
+    "Emitter / Ash": "emetteur / cendres",
+    "Weird Stable": "stabilite etrange",
     "Still life": "vie stable",
     "Oscillator": "oscillateur",
     "Glider": "planeur",
@@ -57,6 +79,8 @@ BASE_MUTATION_RATE = 0.018
 RANDOM_INJECTION_RATE = 0.08
 MAX_CACHE_SIZE = 12000
 HALL_OF_FAME_SIZE = 12
+ARCHIVE_MAX_BEHAVIORS = 900
+NOVELTY_NEIGHBORS = 10
 MAX_REASONABLE_POPULATION = 135
 EXPLOSION_POPULATION_LIMIT = 190
 
@@ -108,6 +132,13 @@ class PatternMetrics:
     bounding_box_area: int = 0
     diversity: int = 0
     stabilization_generation: int = 0
+    avg_population: float = 0.0
+    growth: int = 0
+    mobility: float = 0.0
+    symmetry: float = 0.0
+    activity: float = 0.0
+    ash_objects: int = 0
+    glider_like_events: int = 0
 
 
 @dataclass
@@ -125,12 +156,24 @@ class SearchConfig:
 
 
 @dataclass
+class BehaviorVector:
+    values: tuple
+    niche: tuple
+
+
+@dataclass
 class Evaluation:
     score: float
     grid: list
     history: list
     metrics: PatternMetrics
     signature: tuple
+    behavior: BehaviorVector = None
+    quality_score: float = 0.0
+    novelty_score: float = 0.0
+    rarity_score: float = 0.0
+    aesthetic_score: float = 0.0
+    generation_found: int = 0
 
 
 @dataclass
@@ -138,6 +181,47 @@ class HallEntry:
     score: float
     grid: list
     metrics: PatternMetrics
+
+
+@dataclass
+class ArchiveCell:
+    niche: tuple
+    evaluation: Evaluation
+    seen: int = 1
+
+
+@dataclass
+class SearchArchive:
+    cells: dict
+    behaviors: list
+    discoveries: list
+
+    def filled(self):
+        return len(self.cells)
+
+
+@dataclass
+class MutationProfile:
+    bit_flip: float = 0.016
+    translate: float = 0.12
+    duplicate: float = 0.10
+    mirror: float = 0.08
+    rotate: float = 0.08
+    erode: float = 0.08
+    densify: float = 0.08
+    blast: float = 0.06
+    seed: float = 0.10
+
+
+@dataclass
+class Discovery:
+    score: float
+    grid: list
+    metrics: PatternMetrics
+    behavior: BehaviorVector
+    rle: str
+    coordinates: str
+    generation: int
 
 
 # ============================================================
@@ -154,6 +238,7 @@ state = {
     "search_active": False,
     "search": None,
     "last_metrics": None,
+    "archive_view_index": 0,
 }
 
 ui = {
@@ -182,7 +267,7 @@ WIDE_CANDIDATE_ZONE = centered_zone(WIDE_CANDIDATE_SIZE)
 
 
 def zone_for_target(target):
-    if target in ("Spaceship", "Methuselah", "Novelty"):
+    if target in ("Exploration", "Soup Hunter", "Methuselah Lab", "Emitter / Ash", "Weird Stable", "Spaceship", "Methuselah", "Novelty"):
         return WIDE_CANDIDATE_ZONE
     return BASE_CANDIDATE_ZONE
 
@@ -253,6 +338,17 @@ def normalize_pattern(grid):
     )
 
 
+def active_bounds(grid, margin=1):
+    cells = live_cells(grid)
+    if not cells:
+        return (0, -1, 0, -1)
+    min_row = max(0, min(row for row, _ in cells) - margin)
+    max_row = min(ROWS - 1, max(row for row, _ in cells) + margin)
+    min_col = max(0, min(col for _, col in cells) - margin)
+    max_col = min(COLS - 1, max(col for _, col in cells) + margin)
+    return (min_row, max_row, min_col, max_col)
+
+
 def trim_to_zone(grid, zone):
     trimmed = new_grid(0)
     top, bottom, left, right = zone
@@ -260,6 +356,25 @@ def trim_to_zone(grid, zone):
         for j in range(left, right + 1):
             trimmed[i][j] = grid[i][j]
     return trimmed
+
+
+def paste_cells(grid, cells, top, left, zone):
+    result = copy_grid(grid)
+    ztop, zbottom, zleft, zright = zone
+    for dr, dc in cells:
+        row = top + dr
+        col = left + dc
+        if ztop <= row <= zbottom and zleft <= col <= zright:
+            result[row][col] = 1
+    return result
+
+
+def clear_zone_part(grid, top, bottom, left, right):
+    result = copy_grid(grid)
+    for row in range(max(0, top), min(ROWS - 1, bottom) + 1):
+        for col in range(max(0, left), min(COLS - 1, right) + 1):
+            result[row][col] = 0
+    return result
 
 
 def shifted_grid(grid, dr, dc):
@@ -270,6 +385,28 @@ def shifted_grid(grid, dr, dc):
         if 0 <= nr < ROWS and 0 <= nc < COLS:
             shifted[nr][nc] = 1
     return shifted
+
+
+def shape_symmetry_score(grid):
+    info = normalize_pattern(grid)
+    if info.population == 0:
+        return 0.0
+    cells = set(info.cells)
+    horizontal = sum(1 for row, col in cells if (info.height - 1 - row, col) in cells) / info.population
+    vertical = sum(1 for row, col in cells if (row, info.width - 1 - col) in cells) / info.population
+    diagonal = 0.0
+    if info.width == info.height:
+        diagonal = sum(1 for row, col in cells if (col, row) in cells) / info.population
+    return max(horizontal, vertical, diagonal)
+
+
+def alive_transitions(history):
+    if len(history) < 2:
+        return 0
+    total = 0
+    for a, b in zip(history, history[1:]):
+        total += cell_difference(a, b)
+    return total
 
 
 def cell_difference(a, b):
@@ -319,10 +456,26 @@ def next_generation(grid):
     return nxt
 
 
+def next_generation_active(grid):
+    if is_empty(grid):
+        return new_grid(0)
+
+    top, bottom, left, right = active_bounds(grid, margin=1)
+    nxt = new_grid(0)
+    for i in range(top, bottom + 1):
+        for j in range(left, right + 1):
+            neighbors = count_neighbors(grid, i, j)
+            if grid[i][j] == 1 and neighbors in (2, 3):
+                nxt[i][j] = 1
+            elif grid[i][j] == 0 and neighbors == 3:
+                nxt[i][j] = 1
+    return nxt
+
+
 def simulate(grid, steps):
     current = copy_grid(grid)
     for _ in range(steps):
-        current = next_generation(current)
+        current = next_generation_active(current)
     return current
 
 
@@ -330,7 +483,7 @@ def simulate_history(grid, max_steps):
     history = [copy_grid(grid)]
     current = copy_grid(grid)
     for _ in range(max_steps):
-        current = next_generation(current)
+        current = next_generation_active(current)
         history.append(copy_grid(current))
     return history
 
@@ -343,6 +496,39 @@ def is_glider_signature(period, shift):
     return period == 4 and abs(shift[0]) == 1 and abs(shift[1]) == 1
 
 
+def count_components(grid):
+    cells = set(live_cells(grid))
+    components = 0
+    while cells:
+        components += 1
+        stack = [cells.pop()]
+        while stack:
+            row, col = stack.pop()
+            for dr in (-1, 0, 1):
+                for dc in (-1, 0, 1):
+                    if dr == 0 and dc == 0:
+                        continue
+                    neighbor = (row + dr, col + dc)
+                    if neighbor in cells:
+                        cells.remove(neighbor)
+                        stack.append(neighbor)
+    return components
+
+
+def count_glider_like_events(infos):
+    events = 0
+    for b in range(1, len(infos)):
+        for a in range(max(0, b - 6), b):
+            if infos[a].population == 5 and infos[a].cells == infos[b].cells:
+                shift = (
+                    infos[b].origin[0] - infos[a].origin[0],
+                    infos[b].origin[1] - infos[a].origin[1],
+                )
+                if is_glider_signature(b - a, shift):
+                    events += 1
+    return events
+
+
 def base_metrics(history):
     infos = [normalize_pattern(grid) for grid in history]
     live_counts = [info.population for info in infos]
@@ -351,6 +537,12 @@ def base_metrics(history):
     for index, count in enumerate(live_counts):
         if count > 0:
             last_live = index
+    origins = [info.origin for info in infos if info.population > 0]
+    mobility = 0.0
+    if len(origins) >= 2:
+        first = origins[0]
+        mobility = max(abs(row - first[0]) + abs(col - first[1]) for row, col in origins)
+    avg_population = sum(live_counts) / len(live_counts) if live_counts else 0.0
 
     return infos, PatternMetrics(
         kind="unknown",
@@ -360,6 +552,13 @@ def base_metrics(history):
         final_population=live_counts[-1] if live_counts else 0,
         bounding_box_area=max((info.area for info in infos), default=0),
         diversity=diversity,
+        avg_population=avg_population,
+        growth=(max(live_counts) - live_counts[0]) if live_counts else 0,
+        mobility=mobility,
+        symmetry=shape_symmetry_score(history[0]),
+        activity=alive_transitions(history) / max(1, len(history) - 1),
+        ash_objects=count_components(history[-1]) if history else 0,
+        glider_like_events=count_glider_like_events(infos),
     )
 
 
@@ -451,6 +650,80 @@ def describe_metrics(metrics):
 
 def pattern_signature(metrics):
     return (metrics.kind, metrics.period, metrics.shift, metrics.final_population, metrics.bounding_box_area)
+
+
+KIND_INDEX = {
+    "empty": 0,
+    "died": 1,
+    "still_life": 2,
+    "oscillator": 3,
+    "glider": 4,
+    "spaceship": 5,
+    "stabilized": 6,
+    "methuselah": 7,
+    "exploding": 8,
+    "unknown": 9,
+}
+
+
+def bucket(value, limits):
+    for index, limit in enumerate(limits):
+        if value <= limit:
+            return index
+    return len(limits)
+
+
+def behavior_vector(metrics):
+    mobility = abs(metrics.shift[0]) + abs(metrics.shift[1]) + metrics.mobility
+    values = (
+        KIND_INDEX.get(metrics.kind, 9) / 9.0,
+        min(metrics.period, 40) / 40.0,
+        min(metrics.lifespan, 160) / 160.0,
+        min(metrics.max_population, 220) / 220.0,
+        min(metrics.diversity, 120) / 120.0,
+        min(metrics.bounding_box_area, ROWS * COLS) / (ROWS * COLS),
+        min(metrics.growth + 80, 240) / 240.0,
+        min(mobility, 40) / 40.0,
+        min(metrics.symmetry, 1.0),
+        min(metrics.ash_objects, 18) / 18.0,
+        min(metrics.glider_like_events, 8) / 8.0,
+    )
+    niche = (
+        metrics.kind,
+        bucket(metrics.period, [1, 2, 4, 8, 16, 32]),
+        bucket(metrics.lifespan, [4, 12, 30, 70, 140]),
+        bucket(metrics.max_population, [5, 12, 25, 55, 110, 180]),
+        bucket(metrics.diversity, [1, 3, 8, 18, 40, 80]),
+        bucket(metrics.bounding_box_area, [4, 9, 20, 50, 120, 250]),
+        bucket(mobility, [0, 1, 3, 6, 12, 24]),
+        bucket(metrics.symmetry, [0.20, 0.50, 0.80]),
+    )
+    return BehaviorVector(values=values, niche=niche)
+
+
+def behavior_distance(a, b):
+    return sum((x - y) ** 2 for x, y in zip(a.values, b.values)) ** 0.5
+
+
+def novelty_score(behavior, archive, k=NOVELTY_NEIGHBORS):
+    if archive is None or not archive.behaviors:
+        return 1.0
+    distances = sorted(behavior_distance(behavior, other) for other in archive.behaviors)
+    nearest = distances[:max(1, min(k, len(distances)))]
+    return sum(nearest) / len(nearest)
+
+
+def rarity_score(behavior, archive):
+    if archive is None:
+        return 1.0
+    cell = archive.cells.get(behavior.niche)
+    if cell is None:
+        return 3.0
+    return 1.0 / (1 + cell.seen)
+
+
+def make_archive():
+    return SearchArchive(cells={}, behaviors=[], discoveries=[])
 
 
 # ============================================================
@@ -606,40 +879,150 @@ def score_novelty(grid, config, history, metrics, hall):
     return score + population_explosion_penalty(metrics) + diversity_penalty(metrics, hall) * 1.7
 
 
-def evaluate_candidate(grid, config, cache, hall=None):
-    hall = hall or []
+def aesthetic_value(metrics):
+    value = 0.0
+    value += min(metrics.diversity, 90) * 1.15
+    value += min(metrics.lifespan, 160) * 0.45
+    value += min(metrics.ash_objects, 20) * 2.0
+    value += min(metrics.glider_like_events, 10) * 8.0
+    value += min(metrics.mobility, 40) * 1.4
+    value += min(metrics.bounding_box_area, 220) * 0.10
+    value += (1.0 - min(metrics.symmetry, 1.0)) * 18.0
+    if metrics.kind in ("still_life", "oscillator", "glider"):
+        value -= 25
+    if metrics.kind in ("spaceship", "methuselah", "stabilized", "unknown"):
+        value += 20
+    return value
+
+
+def score_exploration(metrics):
+    if metrics.initial_population == 0:
+        return 10000
+    score = 120
+    score -= metrics.diversity * 1.5
+    score -= min(metrics.lifespan, 140) * 0.9
+    score -= min(metrics.mobility, 35) * 2.0
+    score -= metrics.ash_objects * 2.2
+    score += abs(metrics.max_population - 70) * 0.35
+    score += max(0, metrics.max_population - 175) * 4.0
+    if metrics.kind in ("still_life", "oscillator", "glider", "died"):
+        score += 130
+    return score
+
+
+def score_soup_hunter(metrics):
+    if metrics.initial_population == 0:
+        return 10000
+    score = 160
+    score -= metrics.ash_objects * 7.0
+    score -= metrics.glider_like_events * 18.0
+    score -= metrics.diversity * 0.9
+    score -= min(metrics.lifespan, 110) * 0.35
+    score += max(0, metrics.max_population - 170) * 3.2
+    if metrics.kind in ("spaceship", "methuselah", "stabilized", "unknown"):
+        score -= 55
+    if metrics.kind in ("still_life", "oscillator", "glider") and metrics.ash_objects <= 1:
+        score += 110
+    return score
+
+
+def score_emitter_ash(metrics):
+    if metrics.initial_population == 0:
+        return 10000
+    score = 150
+    score -= metrics.glider_like_events * 26.0
+    score -= metrics.ash_objects * 5.0
+    score -= min(metrics.mobility, 35) * 2.5
+    score -= metrics.diversity * 1.1
+    score += max(0, metrics.max_population - 160) * 3.5
+    if metrics.kind in ("spaceship", "methuselah", "unknown"):
+        score -= 30
+    if metrics.kind in ("still_life", "oscillator", "died"):
+        score += 80
+    return score
+
+
+def score_weird_stable(metrics):
+    if metrics.initial_population == 0:
+        return 10000
+    score = 130
+    score -= metrics.final_population * 0.7
+    score -= metrics.ash_objects * 6.0
+    score -= min(metrics.bounding_box_area, 240) * 0.28
+    score -= (1.0 - min(metrics.symmetry, 1.0)) * 40.0
+    score += max(0, 22 - metrics.final_population) * 2.5
+    if metrics.kind == "stabilized":
+        score -= 90
+    elif metrics.kind == "still_life" and metrics.initial_population > 8:
+        score -= 35
+    elif metrics.kind in ("died", "empty", "exploding"):
+        score += 120
+    return score
+
+
+def quality_score_for_target(grid, config, history, metrics):
+    if config.target == "Still life":
+        return score_still_life(grid, config, history, metrics)
+    if config.target == "Oscillator":
+        return score_oscillator(grid, config, history, metrics)
+    if config.target == "Glider":
+        return score_glider(grid, config, history, metrics)
+    if config.target == "Spaceship":
+        return score_spaceship(grid, config, history, metrics)
+    if config.target in ("Methuselah", "Methuselah Lab"):
+        return score_methuselah(grid, config, history, metrics)
+    if config.target == "Soup Hunter":
+        return score_soup_hunter(metrics)
+    if config.target == "Emitter / Ash":
+        return score_emitter_ash(metrics)
+    if config.target == "Weird Stable":
+        return score_weird_stable(metrics)
+    if config.target in ("Exploration", "Novelty"):
+        return score_exploration(metrics)
+    return score_exploration(metrics)
+
+
+def combined_score(config, quality, novelty, rarity, aesthetic):
+    if config.target in ("Exploration", "Novelty"):
+        return quality - novelty * 150 - rarity * 30 - aesthetic * 0.9
+    if config.target == "Soup Hunter":
+        return quality - novelty * 95 - rarity * 24 - aesthetic * 0.55
+    if config.target in ("Methuselah Lab", "Emitter / Ash", "Weird Stable"):
+        return quality - novelty * 75 - rarity * 18 - aesthetic * 0.45
+    return quality - novelty * 30 - rarity * 8 - aesthetic * 0.12
+
+
+def evaluate_candidate(grid, config, cache, archive=None):
     key = (config.target, config.period, config.max_steps, grid_key(grid))
     if key in cache:
         cached = cache[key]
-        return Evaluation(
-            cached.score,
-            copy_grid(grid),
-            [copy_grid(item) for item in cached.history],
-            cached.metrics,
-            cached.signature,
-        )
-
-    history = simulate_history(grid, max(1, config.max_steps))
-    metrics = classify_history(history)
-
-    if config.target == "Still life":
-        score = score_still_life(grid, config, history, metrics)
-    elif config.target == "Oscillator":
-        score = score_oscillator(grid, config, history, metrics)
-    elif config.target == "Glider":
-        score = score_glider(grid, config, history, metrics)
-    elif config.target == "Spaceship":
-        score = score_spaceship(grid, config, history, metrics)
-    elif config.target == "Methuselah":
-        score = score_methuselah(grid, config, history, metrics)
+        history = [copy_grid(item) for item in cached.history]
+        metrics = cached.metrics
+        behavior = cached.behavior
     else:
-        score = score_novelty(grid, config, history, metrics, hall)
+        history = simulate_history(grid, max(1, config.max_steps))
+        metrics = classify_history(history)
+        behavior = behavior_vector(metrics)
+        cache[key] = Evaluation(0, copy_grid(grid), [copy_grid(item) for item in history], metrics, pattern_signature(metrics), behavior)
+        limit_cache(cache)
 
-    score += diversity_penalty(metrics, hall)
-    result = Evaluation(score, copy_grid(grid), [copy_grid(item) for item in history], metrics, pattern_signature(metrics))
-    cache[key] = result
-    limit_cache(cache)
-    return Evaluation(score, copy_grid(grid), [copy_grid(item) for item in history], metrics, result.signature)
+    quality = quality_score_for_target(grid, config, history, metrics)
+    novelty = novelty_score(behavior, archive)
+    rarity = rarity_score(behavior, archive)
+    aesthetic = aesthetic_value(metrics)
+    score = combined_score(config, quality, novelty, rarity, aesthetic)
+    return Evaluation(
+        score,
+        copy_grid(grid),
+        [copy_grid(item) for item in history],
+        metrics,
+        pattern_signature(metrics),
+        behavior,
+        quality,
+        novelty,
+        rarity,
+        aesthetic,
+    )
 
 
 # ============================================================
@@ -670,7 +1053,7 @@ def classic_seed_candidates(zone):
     ]
 
 
-def random_candidate(zone, density=None):
+def random_uniform_candidate(zone, density):
     if density is None:
         density = random.choice(INITIAL_DENSITIES)
     grid = new_grid(0)
@@ -680,12 +1063,201 @@ def random_candidate(zone, density=None):
     return grid
 
 
+def random_gaussian_candidate(zone, density=None):
+    if density is None:
+        density = random.choice(INITIAL_DENSITIES)
+    grid = new_grid(0)
+    top, bottom, left, right = zone
+    center_row = random.uniform(top + 2, bottom - 2)
+    center_col = random.uniform(left + 2, right - 2)
+    spread = random.uniform(2.0, max(3.0, (bottom - top) / 2.0))
+    for i, j in cells_in_zone(zone):
+        d2 = (i - center_row) ** 2 + (j - center_col) ** 2
+        probability = min(0.70, density * 2.8 / (1 + d2 / (spread * spread)))
+        if random.random() < probability:
+            grid[i][j] = 1
+    return grid
+
+
+def random_symmetric_candidate(zone, density=None, symmetry=None):
+    if density is None:
+        density = random.choice([0.08, 0.12, 0.18, 0.24])
+    if symmetry is None:
+        symmetry = random.choice(["C2", "C4", "D2", "D4"])
+    grid = new_grid(0)
+    top, bottom, left, right = zone
+    height = bottom - top + 1
+    width = right - left + 1
+    for i in range(top, bottom + 1):
+        for j in range(left, right + 1):
+            if random.random() >= density:
+                continue
+            points = {(i, j)}
+            points.add((top + bottom - i, left + right - j))
+            if symmetry in ("D2", "D4"):
+                points.add((top + bottom - i, j))
+                points.add((i, left + right - j))
+            if symmetry in ("C4", "D4") and height == width:
+                ri = i - top
+                cj = j - left
+                points.add((top + cj, left + width - 1 - ri))
+                points.add((top + height - 1 - cj, left + ri))
+            for row, col in points:
+                if top <= row <= bottom and left <= col <= right:
+                    grid[row][col] = 1
+    return grid
+
+
+def random_cluster_candidate(zone):
+    grid = new_grid(0)
+    top, bottom, left, right = zone
+    for _ in range(random.randint(3, 8)):
+        row = random.randint(top, bottom)
+        col = random.randint(left, right)
+        radius = random.randint(1, 3)
+        for i in range(row - radius, row + radius + 1):
+            for j in range(col - radius, col + radius + 1):
+                if top <= i <= bottom and left <= j <= right and random.random() < 0.45:
+                    grid[i][j] = 1
+    return grid
+
+
+def random_line_candidate(zone):
+    grid = new_grid(0)
+    top, bottom, left, right = zone
+    row = random.randint(top, bottom)
+    col = random.randint(left, right)
+    for _ in range(random.randint(12, 34)):
+        if top <= row <= bottom and left <= col <= right:
+            grid[row][col] = 1
+            if random.random() < 0.35:
+                grid[max(top, min(bottom, row + random.choice([-1, 1])))][col] = 1
+        row += random.choice([-1, 0, 1])
+        col += random.choice([-1, 0, 1])
+        row = max(top, min(bottom, row))
+        col = max(left, min(right, col))
+    return grid
+
+
+def random_ring_candidate(zone):
+    grid = new_grid(0)
+    top, bottom, left, right = zone
+    center_row = random.randint(top + 3, bottom - 3)
+    center_col = random.randint(left + 3, right - 3)
+    radius = random.randint(3, max(3, min(bottom - top, right - left) // 2))
+    for i, j in cells_in_zone(zone):
+        distance = abs(((i - center_row) ** 2 + (j - center_col) ** 2) ** 0.5 - radius)
+        if distance < 1.25 and random.random() < 0.70:
+            grid[i][j] = 1
+    return grid
+
+
+def random_composite_seed_candidate(zone):
+    grid = new_grid(0)
+    seeds = classic_seed_candidates(zone)
+    for _ in range(random.randint(2, 5)):
+        seed = random.choice(seeds)
+        info = normalize_pattern(seed)
+        if info.population == 0:
+            continue
+        top, bottom, left, right = zone
+        row = random.randint(top, max(top, bottom - max(1, info.height)))
+        col = random.randint(left, max(left, right - max(1, info.width)))
+        grid = paste_cells(grid, info.cells, row, col, zone)
+    return grid
+
+
+def random_candidate(zone, density=None, style=None):
+    if style is None:
+        style = random.choice(["uniform", "gaussian", "symmetric", "cluster", "line", "ring", "composite"])
+    if style == "uniform":
+        return random_uniform_candidate(zone, density)
+    if style == "gaussian":
+        return random_gaussian_candidate(zone, density)
+    if style == "symmetric":
+        return random_symmetric_candidate(zone, density)
+    if style == "cluster":
+        return random_cluster_candidate(zone)
+    if style == "line":
+        return random_line_candidate(zone)
+    if style == "ring":
+        return random_ring_candidate(zone)
+    return random_composite_seed_candidate(zone)
+
+
 def mutate(grid, zone, mutation_rate):
     mutated = copy_grid(grid)
     for i, j in cells_in_zone(zone):
         if random.random() < mutation_rate:
             mutated[i][j] = 1 - mutated[i][j]
     return mutated
+
+
+def mutate_structural(grid, zone, mutation_rate, profile=None):
+    profile = profile or MutationProfile(bit_flip=mutation_rate)
+    mutated = mutate(grid, zone, profile.bit_flip)
+    info = normalize_pattern(mutated)
+    top, bottom, left, right = zone
+
+    if info.population > 0 and random.random() < profile.translate:
+        dr = random.randint(-3, 3)
+        dc = random.randint(-3, 3)
+        moved = new_grid(0)
+        for row, col in live_cells(mutated):
+            nr = row + dr
+            nc = col + dc
+            if top <= nr <= bottom and left <= nc <= right:
+                moved[nr][nc] = 1
+        mutated = moved
+        info = normalize_pattern(mutated)
+
+    if info.population > 0 and random.random() < profile.duplicate:
+        row = random.randint(top, bottom)
+        col = random.randint(left, right)
+        mutated = paste_cells(mutated, info.cells, row, col, zone)
+
+    if info.population > 0 and random.random() < profile.mirror:
+        mirrored = tuple((row, info.width - 1 - col) for row, col in info.cells)
+        row = random.randint(top, bottom)
+        col = random.randint(left, right)
+        mutated = paste_cells(mutated, mirrored, row, col, zone)
+
+    if info.population > 0 and random.random() < profile.rotate:
+        rotated = tuple((col, info.height - 1 - row) for row, col in info.cells)
+        row = random.randint(top, bottom)
+        col = random.randint(left, right)
+        mutated = paste_cells(mutated, rotated, row, col, zone)
+
+    if random.random() < profile.erode:
+        for i, j in cells_in_zone(zone):
+            if mutated[i][j] == 1 and random.random() < 0.20:
+                mutated[i][j] = 0
+
+    if random.random() < profile.densify:
+        row = random.randint(top, bottom)
+        col = random.randint(left, right)
+        radius = random.randint(1, 3)
+        for i in range(row - radius, row + radius + 1):
+            for j in range(col - radius, col + radius + 1):
+                if top <= i <= bottom and left <= j <= right and random.random() < 0.35:
+                    mutated[i][j] = 1
+
+    if random.random() < profile.blast:
+        row = random.randint(top, bottom)
+        col = random.randint(left, right)
+        radius = random.randint(1, 3)
+        for i in range(row - radius, row + radius + 1):
+            for j in range(col - radius, col + radius + 1):
+                if top <= i <= bottom and left <= j <= right:
+                    mutated[i][j] = 1 if random.random() < 0.42 else 0
+
+    if random.random() < profile.seed:
+        seed = normalize_pattern(random.choice(classic_seed_candidates(zone)))
+        row = random.randint(top, bottom)
+        col = random.randint(left, right)
+        mutated = paste_cells(mutated, seed.cells, row, col, zone)
+
+    return trim_to_zone(mutated, zone)
 
 
 def crossover_uniform(parent_a, parent_b, zone):
@@ -708,9 +1280,80 @@ def crossover_rectangle(parent_a, parent_b, zone):
     return trim_to_zone(child, zone)
 
 
+def crossover_band(parent_a, parent_b, zone):
+    child = copy_grid(parent_a)
+    top, bottom, left, right = zone
+    if random.random() < 0.5:
+        cut = random.randint(top, bottom)
+        for i in range(cut, bottom + 1):
+            for j in range(left, right + 1):
+                child[i][j] = parent_b[i][j]
+    else:
+        cut = random.randint(left, right)
+        for i in range(top, bottom + 1):
+            for j in range(cut, right + 1):
+                child[i][j] = parent_b[i][j]
+    return trim_to_zone(child, zone)
+
+
+def crossover_organic(parent_a, parent_b, zone):
+    child = new_grid(0)
+    top, bottom, left, right = zone
+    center_row = random.uniform(top, bottom)
+    center_col = random.uniform(left, right)
+    scale = random.uniform(2.0, max(3.0, (bottom - top) / 2.0))
+    for i, j in cells_in_zone(zone):
+        wave = ((i - center_row) ** 2 + (j - center_col) ** 2) / (scale * scale)
+        noise = random.uniform(-0.35, 0.35)
+        child[i][j] = parent_a[i][j] if wave + noise < 1.0 else parent_b[i][j]
+    return child
+
+
+def crossover_fragment(parent_a, parent_b, zone):
+    info_a = normalize_pattern(parent_a)
+    info_b = normalize_pattern(parent_b)
+    if info_a.population == 0:
+        return trim_to_zone(parent_b, zone)
+    if info_b.population == 0:
+        return trim_to_zone(parent_a, zone)
+    child = new_grid(0)
+    top, bottom, left, right = zone
+    for info in (info_a, info_b):
+        row = random.randint(top, max(top, bottom - max(1, info.height)))
+        col = random.randint(left, max(left, right - max(1, info.width)))
+        child = paste_cells(child, info.cells, row, col, zone)
+    return child
+
+
+def crossover_creative(parent_a, parent_b, zone):
+    operator = random.choice([
+        crossover_uniform,
+        crossover_rectangle,
+        crossover_band,
+        crossover_organic,
+        crossover_fragment,
+    ])
+    return operator(parent_a, parent_b, zone)
+
+
 def tournament(evaluated, size=5):
     sample = random.sample(evaluated, min(size, len(evaluated)))
     return min(sample, key=lambda item: item.score).grid
+
+
+def select_archive_parent(archive):
+    if archive is None or not archive.cells:
+        return None
+    cells = list(archive.cells.values())
+    weights = [1.0 / (cell.seen + 1) + max(0.0, cell.evaluation.novelty_score) for cell in cells]
+    total = sum(weights)
+    pick = random.random() * total
+    running = 0.0
+    for cell, weight in zip(cells, weights):
+        running += weight
+        if running >= pick:
+            return cell.evaluation.grid
+    return random.choice(cells).evaluation.grid
 
 
 def unique_population(population, config):
@@ -740,11 +1383,19 @@ def create_initial_population(config, manual_grid=None):
 
     population.extend(classic_seed_candidates(config.zone))
     for density in INITIAL_DENSITIES:
-        for _ in range(8):
-            population.append(random_candidate(config.zone, density))
+        for style in ("uniform", "gaussian", "symmetric"):
+            for _ in range(3):
+                population.append(random_candidate(config.zone, density, style))
+
+    for style in ("cluster", "line", "ring", "composite"):
+        for _ in range(10):
+            population.append(random_candidate(config.zone, style=style))
 
     while len(population) < config.population_size:
-        population.append(random_candidate(config.zone))
+        if config.target == "Soup Hunter":
+            population.append(random_candidate(config.zone, random.choice([0.12, 0.18, 0.25, 0.32]), "uniform"))
+        else:
+            population.append(random_candidate(config.zone))
     return unique_population(population, config)
 
 
@@ -761,6 +1412,50 @@ def local_improvement(best_eval, config, cache, hall):
             best = evaluation
             best_grid = copy_grid(candidate)
     return best
+
+
+def discovery_from_evaluation(evaluation, generation):
+    return Discovery(
+        evaluation.score,
+        copy_grid(evaluation.grid),
+        evaluation.metrics,
+        evaluation.behavior,
+        grid_to_rle(evaluation.grid),
+        grid_to_coordinates(evaluation.grid),
+        generation,
+    )
+
+
+def archive_insert(archive, evaluation, generation=0):
+    if archive is None:
+        return False
+    niche = evaluation.behavior.niche
+    existing = archive.cells.get(niche)
+    inserted = False
+    if existing is None:
+        archive.cells[niche] = ArchiveCell(niche, evaluation, 1)
+        inserted = True
+    else:
+        existing.seen += 1
+        if evaluation.score < existing.evaluation.score:
+            existing.evaluation = evaluation
+            inserted = True
+
+    archive.behaviors.append(evaluation.behavior)
+    if len(archive.behaviors) > ARCHIVE_MAX_BEHAVIORS:
+        archive.behaviors = archive.behaviors[-ARCHIVE_MAX_BEHAVIORS:]
+
+    if inserted:
+        archive.discoveries.append(discovery_from_evaluation(evaluation, generation))
+        archive.discoveries.sort(key=lambda item: item.score)
+        archive.discoveries = archive.discoveries[:HALL_OF_FAME_SIZE * 4]
+    return inserted
+
+
+def archive_elites(archive):
+    if archive is None:
+        return []
+    return sorted((cell.evaluation for cell in archive.cells.values()), key=lambda item: item.score)
 
 
 def update_hall_of_fame(hall, evaluation):
@@ -786,6 +1481,8 @@ def make_config(target, period, max_steps):
     target = target if target in TARGETS else "Glider"
     period = max(1, period)
     max_steps = max(2, max_steps)
+    if target in ("Exploration", "Soup Hunter", "Methuselah Lab", "Emitter / Ash", "Weird Stable"):
+        max_steps = max(max_steps, DEFAULT_PERIOD[target])
     return SearchConfig(target=target, period=period, max_steps=max_steps, zone=zone_for_target(target))
 
 
@@ -798,7 +1495,8 @@ def initialize_search(target, period, max_steps, manual_grid=None):
         "best": None,
         "cache": {},
         "stagnation": 0,
-        "hall": [],
+        "archive": make_archive(),
+        "archive_index": 0,
     }
     state["search_active"] = True
 
@@ -807,20 +1505,23 @@ def advance_search_one_generation():
     search = state["search"]
     config = search["config"]
     cache = search["cache"]
-    hall = search["hall"]
+    archive = search["archive"]
 
-    evaluated = [evaluate_candidate(candidate, config, cache, hall) for candidate in search["population"]]
+    evaluated = [evaluate_candidate(candidate, config, cache, archive) for candidate in search["population"]]
     evaluated.sort(key=lambda item: item.score)
+    for item in evaluated:
+        archive_insert(archive, item, search["generation"])
 
-    improved = local_improvement(evaluated[0], config, cache, hall)
+    improved = local_improvement(evaluated[0], config, cache, archive)
     if improved.score < evaluated[0].score:
         evaluated.insert(0, improved)
+        archive_insert(archive, improved, search["generation"])
     else:
         evaluated.append(improved)
         evaluated.sort(key=lambda item: item.score)
 
-    current_best = evaluated[0]
-    search["hall"] = update_hall_of_fame(search["hall"], current_best)
+    elites = archive_elites(archive)
+    current_best = min([evaluated[0]] + elites[:8], key=lambda item: item.score)
 
     if search["best"] is None or current_best.score < search["best"].score:
         search["best"] = current_best
@@ -837,7 +1538,7 @@ def advance_search_one_generation():
         state["search_active"] = False
         return
 
-    if current_best.score <= 0.01 and config.target not in ("Methuselah", "Novelty"):
+    if current_best.score <= 0.01 and config.target not in ("Methuselah", "Novelty", "Exploration", "Soup Hunter", "Methuselah Lab", "Emitter / Ash", "Weird Stable"):
         state["search_active"] = False
         return
 
@@ -845,25 +1546,31 @@ def advance_search_one_generation():
     injection_rate = config.injection_rate
     if search["stagnation"] >= 35:
         injection_rate = min(0.24, config.injection_rate * 2.7)
+    if search["stagnation"] >= 90:
+        injection_rate = min(0.38, injection_rate * 1.5)
 
     next_population = []
     for item in evaluated[:config.elite_count]:
         next_population.append(copy_grid(item.grid))
 
-    for entry in search["hall"][:4]:
-        next_population.append(mutate(entry.grid, config.zone, mutation_rate * 0.7))
+    for item in elites[:min(12, len(elites))]:
+        next_population.append(mutate_structural(item.grid, config.zone, mutation_rate * 0.7))
 
     for _ in range(int(config.population_size * injection_rate)):
-        next_population.append(random_candidate(config.zone))
+        style = None
+        if config.target == "Soup Hunter":
+            style = random.choice(["uniform", "gaussian", "symmetric"])
+        next_population.append(random_candidate(config.zone, style=style))
 
     while len(next_population) < config.population_size:
-        parent_a = tournament(evaluated)
-        parent_b = tournament(evaluated)
-        if random.random() < 0.55:
-            child = crossover_uniform(parent_a, parent_b, config.zone)
-        else:
-            child = crossover_rectangle(parent_a, parent_b, config.zone)
-        next_population.append(mutate(child, config.zone, mutation_rate))
+        parent_a = select_archive_parent(archive) if random.random() < 0.65 else None
+        parent_b = select_archive_parent(archive) if random.random() < 0.65 else None
+        if parent_a is None:
+            parent_a = tournament(evaluated)
+        if parent_b is None:
+            parent_b = tournament(evaluated)
+        child = crossover_creative(parent_a, parent_b, config.zone)
+        next_population.append(mutate_structural(child, config.zone, mutation_rate))
 
     search["population"] = unique_population(next_population, config)
     search["generation"] += 1
@@ -921,7 +1628,7 @@ def read_int_entry(entry, default, minimum=1):
 
 def current_target():
     if ui["target_var"] is None:
-        return "Glider"
+        return "Exploration"
     value = ui["target_var"].get()
     if " - " in value:
         return value.split(" - ", 1)[0]
@@ -982,13 +1689,13 @@ def create_interface(board):
     ).pack(fill="x", padx=8, pady=(2, 10))
 
     section(panel, "Recherche")
-    ui["target_var"] = tk.StringVar(value=target_option("Glider"))
+    ui["target_var"] = tk.StringVar(value=target_option("Exploration"))
     ui["target_var"].trace_add("write", target_changed)
     tk.OptionMenu(panel, ui["target_var"], *[target_option(target) for target in TARGETS]).pack(fill="x", padx=8, pady=(0, 8))
 
     tk.Label(panel, text="Periode visee", bg=UI_BG, fg=TEXT_COLOR, anchor="w").pack(fill="x", padx=8)
     ui["period_entry"] = tk.Entry(panel, justify="center")
-    ui["period_entry"].insert(0, "4")
+    ui["period_entry"].insert(0, str(DEFAULT_PERIOD["Exploration"]))
     ui["period_entry"].pack(fill="x", padx=8, pady=(2, 8))
 
     tk.Label(panel, text="Generations analysees", bg=UI_BG, fg=TEXT_COLOR, anchor="w").pack(fill="x", padx=8)
@@ -996,7 +1703,8 @@ def create_interface(board):
     ui["max_steps_entry"].insert(0, str(DEFAULT_MAX_STEPS))
     ui["max_steps_entry"].pack(fill="x", padx=8, pady=(2, 10))
 
-    ui["search_button"] = create_button(panel, "Lancer la recherche (S)", lambda: start_search(board), PRIMARY_BUTTON_BG)
+    ui["search_button"] = create_button(panel, "Explorer (S)", lambda: start_search(board), PRIMARY_BUTTON_BG)
+    create_button(panel, "Deep run", lambda: start_deep_run(board), PRIMARY_BUTTON_BG)
     ui["stop_button"] = create_button(panel, "Arreter (Esc)", lambda: stop_all(board))
 
     section(panel, "Motif")
@@ -1004,7 +1712,10 @@ def create_interface(board):
     create_button(panel, "Lire / pause (Espace)", lambda: toggle_playback(board))
     create_button(panel, "Etape suivante (N)", lambda: step_once(board))
     create_button(panel, "Aleatoire (R)", lambda: randomize_grid(board))
+    create_button(panel, "Prochaine decouverte", lambda: show_next_discovery(board))
+    create_button(panel, "Archive", lambda: show_archive_best(board))
     create_button(panel, "Exporter console", lambda: export_current(board))
+    create_button(panel, "Exporter archive", lambda: export_all_discoveries(board))
     create_button(panel, "Effacer (X)", lambda: clear_grid(board), DANGER_BUTTON_BG)
 
     ui["status_label"] = tk.Label(
@@ -1041,10 +1752,12 @@ def update_interface():
         if best is None:
             text = "Recherche {}...".format(TARGET_FR[config.target])
         else:
-            text = "Gen {} | score {:.2f} | cache {} | {}".format(
+            text = "Gen {} | score {:.1f} | Q {:.1f} N {:.2f} | niches {} | {}".format(
                 search["generation"],
                 best.score,
-                len(search["cache"]),
+                best.quality_score,
+                best.novelty_score,
+                search["archive"].filled(),
                 describe_metrics(best.metrics),
             )
         status.configure(text=text)
@@ -1056,10 +1769,11 @@ def update_interface():
 
     metrics = state["last_metrics"]
     if metrics is not None:
-        status.configure(text="{} | vivantes {} | diversite {}".format(
+        status.configure(text="{} | vivantes {} | diversite {} | mobilite {:.1f}".format(
             describe_metrics(metrics),
             count_live_cells(state["display_grid"] or state["grid"]),
             metrics.diversity,
+            metrics.mobility,
         ))
     else:
         status.configure(text="Dessinez un motif, classifiez-le ou lancez la recherche.")
@@ -1095,11 +1809,12 @@ def refresh_info(board):
         config = search["config"]
         best = search["best"]
         best_score = "..." if best is None else "{:.2f}".format(best.score)
-        line = "Recherche: {} | gen {} / {} | meilleur score {} | cache {}".format(
+        line = "Recherche: {} | gen {} / {} | score {} | niches {} | cache {}".format(
             TARGET_FR[config.target],
             search["generation"],
             config.max_generations,
             best_score,
+            search["archive"].filled(),
             len(search["cache"]),
         )
     else:
@@ -1112,8 +1827,18 @@ def refresh_info(board):
     display_line(board, 0, line, IMPORTANT_TEXT_COLOR)
 
     metrics = state["last_metrics"]
-    display_line(board, 1, describe_metrics(metrics) if metrics else "Aucune classification")
-    display_line(board, 2, "S start/stop | Espace lecture | N pas | C classifier | R hasard | X effacer | 1-6 cible")
+    if metrics and search is not None and search.get("best") is not None:
+        best = search["best"]
+        display_line(board, 1, "{} | Q {:.1f} N {:.2f} R {:.2f} A {:.1f}".format(
+            describe_metrics(metrics),
+            best.quality_score,
+            best.novelty_score,
+            best.rarity_score,
+            best.aesthetic_score,
+        ))
+    else:
+        display_line(board, 1, describe_metrics(metrics) if metrics else "Aucune classification")
+    display_line(board, 2, "S explorer | D deep | Espace lecture | N pas | C classifier | E export | 1-9/0/- cible")
 
     if state["history"]:
         display_line(board, 3, "Generation {} / {} | cellules vivantes {} | zone de recherche en beige".format(
@@ -1238,6 +1963,16 @@ def start_search(board):
     board.after(1, search_loop, board)
 
 
+def start_deep_run(board):
+    if ui["target_var"] is not None:
+        ui["target_var"].set(target_option("Exploration"))
+    if ui["max_steps_entry"] is not None and ui["max_steps_entry"].winfo_exists():
+        value = max(current_max_steps(), 160)
+        ui["max_steps_entry"].delete(0, tk.END)
+        ui["max_steps_entry"].insert(0, str(value))
+    start_search(board)
+
+
 def search_loop(board):
     if not state["search_active"]:
         refresh_board(board)
@@ -1265,6 +2000,60 @@ def export_current(board):
     board.console("RLE:")
     for line in grid_to_rle(grid).splitlines():
         board.console(line)
+
+
+def current_archive_discoveries():
+    if state["search"] is None:
+        return []
+    archive = state["search"].get("archive")
+    if archive is None:
+        return []
+    return archive.discoveries
+
+
+def display_discovery(board, discovery):
+    state["grid"] = copy_grid(discovery.grid)
+    state["history"] = simulate_history(state["grid"], current_max_steps())
+    state["history_index"] = 0
+    state["display_grid"] = copy_grid(state["history"][0])
+    state["last_metrics"] = discovery.metrics
+    refresh_board(board)
+    refresh_info(board)
+
+
+def show_next_discovery(board):
+    discoveries = current_archive_discoveries()
+    if not discoveries:
+        board.console("Archive vide pour le moment.")
+        return
+    state["archive_view_index"] = (state["archive_view_index"] + 1) % len(discoveries)
+    display_discovery(board, discoveries[state["archive_view_index"]])
+
+
+def show_archive_best(board):
+    discoveries = current_archive_discoveries()
+    if not discoveries:
+        board.console("Archive vide pour le moment.")
+        return
+    state["archive_view_index"] = 0
+    display_discovery(board, discoveries[0])
+
+
+def export_all_discoveries(board):
+    discoveries = current_archive_discoveries()
+    if not discoveries:
+        board.console("Aucune decouverte a exporter.")
+        return
+    board.console("=== EXPORT ARCHIVE QD ===")
+    for index, discovery in enumerate(discoveries, start=1):
+        board.console("#{} | gen {} | score {:.2f} | {}".format(
+            index,
+            discovery.generation,
+            discovery.score,
+            describe_metrics(discovery.metrics),
+        ))
+        for line in discovery.rle.splitlines():
+            board.console(line)
 
 
 def set_target_by_index(index):
@@ -1314,10 +2103,20 @@ def handle_key(board, event):
             stop_all(board)
         else:
             start_search(board)
+    elif key == "d":
+        start_deep_run(board)
     elif key == "e":
         export_current(board)
-    elif key in ("1", "2", "3", "4", "5", "6"):
+    elif key in ("1", "2", "3", "4", "5", "6", "7", "8", "9"):
         set_target_by_index(int(key) - 1)
+    elif key == "0":
+        set_target_by_index(9)
+    elif key == "minus":
+        set_target_by_index(10)
+    elif key == "a":
+        show_archive_best(board)
+    elif key == "plus":
+        show_next_discovery(board)
     elif key == "escape":
         stop_all(board)
 

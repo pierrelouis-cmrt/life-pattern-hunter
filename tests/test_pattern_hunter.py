@@ -107,6 +107,132 @@ class GeneticSearchTests(unittest.TestCase):
         self.assertEqual("still_life", best.metrics.kind)
         self.assertLess(best.score, 1.0)
 
+    def test_behavior_vector_and_niche_are_stable(self):
+        grid = grid_from_shape([(0, 0), (0, 1), (1, 0), (1, 1)])
+        metrics = hunter.classify_grid(grid, 6)
+
+        first = hunter.behavior_vector(metrics)
+        second = hunter.behavior_vector(metrics)
+
+        self.assertEqual(first.values, second.values)
+        self.assertEqual(first.niche, second.niche)
+
+    def test_novelty_distance_uses_archive_neighbors(self):
+        archive = hunter.make_archive()
+        config = self.small_config("Still life")
+        cache = {}
+        block = grid_from_shape([(0, 0), (0, 1), (1, 0), (1, 1)])
+        blinker = grid_from_shape([(0, 0), (0, 1), (0, 2)])
+
+        block_eval = hunter.evaluate_candidate(block, config, cache, archive)
+        hunter.archive_insert(archive, block_eval)
+        blinker_eval = hunter.evaluate_candidate(blinker, config, cache, archive)
+
+        self.assertGreater(blinker_eval.novelty_score, 0)
+        self.assertNotEqual(block_eval.behavior.niche, blinker_eval.behavior.niche)
+
+    def test_archive_replaces_worse_elite_in_same_niche(self):
+        archive = hunter.make_archive()
+        config = self.small_config("Still life")
+        cache = {}
+        block = grid_from_shape([(0, 0), (0, 1), (1, 0), (1, 1)])
+        best = hunter.evaluate_candidate(block, config, cache, archive)
+        worse = hunter.Evaluation(
+            best.score + 100,
+            best.grid,
+            best.history,
+            best.metrics,
+            best.signature,
+            best.behavior,
+        )
+
+        self.assertTrue(hunter.archive_insert(archive, worse))
+        self.assertTrue(hunter.archive_insert(archive, best))
+        self.assertEqual(best.score, archive.cells[best.behavior.niche].evaluation.score)
+
+    def test_structural_mutation_is_limited_to_search_zone(self):
+        random.seed(789)
+        config = self.small_config("Exploration")
+        grid = hunter.random_candidate(config.zone, style="cluster")
+        profile = hunter.MutationProfile(
+            bit_flip=0.0,
+            translate=1.0,
+            duplicate=1.0,
+            mirror=1.0,
+            rotate=1.0,
+            erode=1.0,
+            densify=1.0,
+            blast=1.0,
+            seed=1.0,
+        )
+        mutated = hunter.mutate_structural(grid, config.zone, 0.02, profile)
+        top, bottom, left, right = config.zone
+
+        for row in range(hunter.ROWS):
+            for col in range(hunter.COLS):
+                if not (top <= row <= bottom and left <= col <= right):
+                    self.assertEqual(0, mutated[row][col])
+
+    def test_creative_generators_respect_bounds(self):
+        random.seed(321)
+        config = self.small_config("Exploration")
+        for style in ("uniform", "gaussian", "symmetric", "cluster", "line", "ring", "composite"):
+            grid = hunter.random_candidate(config.zone, 0.20, style)
+            self.assertFalse(hunter.is_empty(grid))
+            trimmed = hunter.trim_to_zone(grid, config.zone)
+            self.assertEqual(hunter.grid_key(trimmed), hunter.grid_key(grid))
+
+    def test_short_exploration_search_fills_multiple_niches(self):
+        random.seed(654)
+        config = hunter.SearchConfig(
+            target="Exploration",
+            period=hunter.DEFAULT_PERIOD["Exploration"],
+            max_steps=14,
+            population_size=28,
+            elite_count=5,
+            max_generations=2,
+            local_tries=2,
+            zone=hunter.zone_for_target("Exploration"),
+        )
+        hunter.state["search"] = {
+            "config": config,
+            "population": hunter.create_initial_population(config),
+            "generation": 0,
+            "best": None,
+            "cache": {},
+            "stagnation": 0,
+            "archive": hunter.make_archive(),
+            "archive_index": 0,
+        }
+        hunter.state["search_active"] = True
+
+        hunter.advance_search_one_generation()
+
+        archive = hunter.state["search"]["archive"]
+        self.assertGreaterEqual(archive.filled(), 2)
+        self.assertEqual(config.population_size, len(hunter.state["search"]["population"]))
+
+    def test_soup_hunter_archive_keeps_non_common_signatures(self):
+        random.seed(987)
+        config = hunter.SearchConfig(
+            target="Soup Hunter",
+            period=hunter.DEFAULT_PERIOD["Soup Hunter"],
+            max_steps=18,
+            population_size=30,
+            elite_count=5,
+            max_generations=2,
+            local_tries=2,
+            zone=hunter.zone_for_target("Soup Hunter"),
+        )
+        cache = {}
+        archive = hunter.make_archive()
+        for candidate in hunter.create_initial_population(config):
+            evaluation = hunter.evaluate_candidate(candidate, config, cache, archive)
+            hunter.archive_insert(archive, evaluation)
+
+        kinds = {cell.evaluation.metrics.kind for cell in archive.cells.values()}
+        self.assertTrue(kinds - {"still_life", "oscillator", "glider"})
+
 
 if __name__ == "__main__":
     unittest.main()

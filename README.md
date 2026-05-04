@@ -1,6 +1,8 @@
 # Life Pattern Hunter
 
-Application Eniseboard pour chercher automatiquement des motifs interessants du jeu de la vie de Conway avec un algorithme genetique.
+Application Eniseboard pour explorer automatiquement des motifs inhabituels du jeu de la vie de Conway avec un algorithme genetique creatif.
+
+Le programme principal est `pattern-hunter.py`. Il ne cherche plus seulement "le meilleur" motif d'une famille : il maintient une archive Quality-Diversity de decouvertes differentes, afin de favoriser des formes originales, mobiles, longues, instables ou visuellement surprenantes.
 
 ## Lancer
 
@@ -9,36 +11,47 @@ pip install eniseboard
 python3 pattern-hunter.py
 ```
 
-Le fichier principal est `pattern-hunter.py`. Le fichier `reverse-search.py` est conserve comme experience secondaire de recherche inverse vers une cible dessinee.
-
-## Utilisation
-
-- Clic gauche : inverse une cellule.
-- Clic droit : efface une cellule.
-- `S` : lancer ou arreter la recherche genetique.
-- `Espace` : lire ou mettre en pause l'evolution.
-- `N` : avancer d'une generation.
-- `C` : classifier le motif courant.
-- `R` : remplir aleatoirement la zone de recherche.
-- `X` : effacer.
-- `E` : exporter le meilleur motif dans la console.
-- `1` a `6` : choisir le type de motif cherche.
-
-La zone beige est la zone dans laquelle l'algorithme genetique construit les candidats. Elle est plus grande pour les vaisseaux, les methuselahs et la recherche de nouveaute.
-
-## Modes de recherche
-
-- `Still life` : motif stable.
-- `Oscillator` : motif qui revient sans se deplacer.
-- `Glider` : planeur classique, periode 4 avec deplacement diagonal.
-- `Spaceship` : motif periodique qui se deplace.
-- `Methuselah` : petit motif initial qui reste actif longtemps.
-- `Novelty` : motif inhabituel, diversifie et non trivial.
-
-## Tests
-
-Les tests n'ont pas besoin d'Eniseboard.
+Les tests n'ont pas besoin d'Eniseboard :
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
+
+## Controles
+
+- Clic gauche : inverse une cellule.
+- Clic droit : efface une cellule.
+- `S` : lancer ou arreter l'exploration.
+- `D` : lancer un deep run en mode Exploration avec plus de generations analysees.
+- `Espace` : lire ou mettre en pause l'evolution.
+- `N` : avancer d'une generation.
+- `C` : classifier le motif courant.
+- `R` : generer un motif aleatoire creatif.
+- `E` : exporter le motif courant en console.
+- `A` : afficher la meilleure decouverte de l'archive.
+- `X` : effacer.
+- `1` a `9`, puis `0` et `-` : changer de mode de recherche.
+
+La zone beige est la zone ou l'algorithme genetique fabrique les candidats.
+
+## Modes
+
+- `Exploration` : mode par defaut, maximise nouveaute, diversite temporelle, mobilite et activite controlee.
+- `Soup Hunter` : genere des soups aleatoires inspirees d'apgsearch et recompense les cendres variees.
+- `Methuselah Lab` : cherche de petits motifs qui restent actifs longtemps.
+- `Emitter / Ash` : favorise les fragments mobiles, evenements de type planeur et objets multiples.
+- `Weird Stable` : cherche des stabilisations grandes, asymetriques ou composites.
+- `Still life`, `Oscillator`, `Glider`, `Spaceship`, `Methuselah`, `Novelty` : modes cibles conserves.
+
+## Algorithme
+
+Chaque candidat est simule, classifie, puis transforme en `BehaviorVector`. Ce vecteur contient la famille du motif, sa periode, sa duree de vie, sa population maximale, sa diversite, son aire, sa croissance, sa mobilite, sa symetrie, ses cendres et ses evenements proches d'un planeur.
+
+Le score final combine :
+
+- qualite : adequation au mode choisi ;
+- nouveaute : distance aux comportements deja vus ;
+- rarete : bonus aux niches peu visitees ;
+- esthetique : activite, mobilite, asymetrie et richesse des cendres.
+
+La reproduction utilise des mutations structurelles : translation, duplication, miroir, rotation, erosion, densification, explosion locale et injection de fragments classiques.
