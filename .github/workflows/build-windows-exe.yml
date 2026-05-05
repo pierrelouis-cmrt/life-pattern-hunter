@@ -41,7 +41,7 @@ jobs:
             --clean `
             --onefile `
             --windowed `
-            --name LifePatternHunter `
+            --name GameOfLife `
             --collect-all eniseboard `
             --hidden-import pkg_resources `
             --collect-all pkg_resources `
@@ -50,7 +50,7 @@ jobs:
       - name: Validate executable output
         shell: pwsh
         run: |
-          $exePath = "dist\LifePatternHunter.exe"
+          $exePath = "dist\GameOfLife.exe"
 
           if (-not (Test-Path $exePath)) {
             throw "Expected executable was not created: $exePath"
@@ -75,14 +75,14 @@ jobs:
           Remove-Item -Path $publishDir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -Path $publishDir -ItemType Directory -Force | Out-Null
 
-          Copy-Item -Path "dist\LifePatternHunter.exe" -Destination (Join-Path $publishDir "LifePatternHunter.exe")
+          Copy-Item -Path "dist\GameOfLife.exe" -Destination (Join-Path $publishDir "GameOfLife.exe")
 
           Push-Location $publishDir
           git init
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b build
-          git add LifePatternHunter.exe
+          git add GameOfLife.exe
           git commit -m "Build Windows executable"
           git remote add origin "https://x-access-token:$env:GITHUB_TOKEN@github.com/${{ github.repository }}.git"
           git push --force origin build
