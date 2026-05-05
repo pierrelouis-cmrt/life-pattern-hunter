@@ -30,8 +30,9 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install pyinstaller eniseboard
+          python -m pip install --upgrade pip wheel
+          python -m pip install "setuptools<81" pyinstaller eniseboard
+          python -c "import pkg_resources; import eniseboard"
 
       - name: Build executable
         run: |
@@ -42,6 +43,8 @@ jobs:
             --windowed `
             --name LifePatternHunter `
             --collect-all eniseboard `
+            --hidden-import pkg_resources `
+            --collect-all pkg_resources `
             reverse-search.py
 
       - name: Validate executable output
