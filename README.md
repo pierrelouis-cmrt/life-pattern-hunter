@@ -1,63 +1,84 @@
 # Life Pattern Hunter
 
-Application Eniseboard pour explorer automatiquement des motifs inhabituels du jeu de la vie de Conway avec un algorithme genetique creatif.
+Projet Eniseboard autour du jeu de la vie de Conway.
 
-Le programme principal est `pattern-hunter.py`. Il ne cherche plus seulement "le meilleur" motif d'une famille : il maintient une archive Quality-Diversity de decouvertes differentes, afin de favoriser des formes originales, mobiles, longues, instables ou visuellement surprenantes.
+Le projet `Pattern Hunter` est pour l'instant mis en pause. Le travail courant se concentre sur la **reverse search** : chercher une grille initiale qui, apres `X` generations, produit une cible finale dessinee par l'utilisateur.
 
-## Lancer
+L'ancien explorateur de motifs est conserve dans `archive/`.
+
+## Programme principal
+
+Le programme principal est maintenant :
+
+```bash
+python3 reverse-search.py
+```
+
+Il ouvre une interface graphique ou l'utilisateur dessine le motif final souhaite, choisit le nombre d'etapes, puis lance un solveur inverse.
+
+## Installation
 
 ```bash
 pip install eniseboard
-python3 pattern-hunter.py
 ```
 
-Les tests n'ont pas besoin d'Eniseboard :
+## Lancer la reverse search
 
 ```bash
-python3 -m unittest discover -s tests -v
+python3 reverse-search.py
 ```
 
-## Controles
+Dans l'interface :
 
-- Clic gauche : inverse une cellule.
-- Clic droit : efface une cellule.
-- `S` : lancer une recherche rapide et interactive.
-- `D` : lancer un deep run plus lent mais plus approfondi sur le mode courant.
-- `Pause` / `Esc` : arreter la recherche en cours.
-- `Explain` : expliquer dans la console la generation genetique courante.
-- `Auto preview` : activer ou desactiver la lecture automatique du meilleur motif pendant la recherche.
-- `Espace` : lire ou mettre en pause l'evolution.
-- `N` : avancer d'une generation.
-- `C` : classifier le motif courant.
-- `R` : generer un motif aleatoire creatif.
-- `E` : exporter le motif courant en console.
-- `A` : afficher la meilleure decouverte de l'archive.
-- `X` : effacer.
-- `1` a `9`, puis `0` et `-` : changer de mode de recherche.
+- dessiner la cible finale sur la grille ;
+- regler `Steps`, le nombre de generations a remonter indirectement ;
+- cliquer sur `Start` pour lancer la recherche ;
+- utiliser `Best initial`, `Show result` et `Play evolution` pour inspecter la solution trouvee.
 
-La zone beige est la zone ou l'algorithme genetique fabrique les candidats.
+Le solveur garde la meilleure grille initiale rencontree. Si une solution exacte existe et est trouvee, l'erreur tombe a `0`.
 
-## Modes
+## Idee de l'algorithme
 
-- `Exploration` : mode par defaut, maximise nouveaute, diversite temporelle, mobilite et activite controlee.
-- `Soup Hunter` : genere des soups aleatoires inspirees d'apgsearch et recompense les cendres variees.
-- `Methuselah Lab` : cherche de petits motifs qui restent actifs longtemps.
-- `Emitter / Ash` : favorise les fragments mobiles, evenements de type planeur et objets multiples.
-- `Weird Stable` : cherche des stabilisations grandes, asymetriques ou composites.
-- `Spaceship` : cherche un vaisseau non-planeur ; le glider classique est volontairement penalise.
-- `Still life`, `Oscillator`, `Glider`, `Methuselah`, `Novelty` : modes cibles conserves.
+Le probleme est inverse : les regles du jeu de la vie sont simples a appliquer vers le futur, mais il n'existe pas de retour en arriere direct et unique.
 
-## Algorithme
+Le programme utilise donc un algorithme genetique :
 
-Chaque candidat est simule, classifie, puis transforme en `BehaviorVector`. Ce vecteur contient la famille du motif, sa periode, sa duree de vie, sa population maximale, sa diversite, son aire, sa croissance, sa mobilite, sa symetrie, ses cendres et ses evenements proches d'un planeur.
+- creation d'une population de grilles initiales candidates ;
+- simulation de chaque candidate pendant `X` generations ;
+- comparaison du resultat avec la cible finale ;
+- conservation des meilleurs candidats ;
+- generation de nouveaux candidats par selection, croisement, mutation et injection aleatoire ;
+- amelioration locale du meilleur candidat courant.
 
-Le score final combine :
+Le score penalise les cellules manquantes dans la cible, les cellules en trop, les cellules parasites eloignees de la cible et, tres legerement, les grilles initiales trop chargees.
 
-- qualite : adequation au mode choisi ;
-- nouveaute : distance aux comportements deja vus ;
-- rarete : bonus aux niches peu visitees ;
-- esthetique : activite, mobilite, asymetrie et richesse des cendres.
+Les explications detaillees sont dans :
 
-Pour rester interactif, chaque generation utilise deux niveaux d'evaluation : une evaluation rapide trie toute la population, puis seuls les meilleurs candidats recoivent une simulation complete. Le panneau lateral affiche les evaluations rapides/completes, les niches d'archive, la nouveaute moyenne, la stagnation et les meilleures decouvertes.
+- `ALGORITHM_SHORT.md` : version concise ;
+- `ALGORITHM.md` : version complete avec complexite.
 
-La reproduction utilise des mutations structurelles : translation, duplication, miroir, rotation, erosion, densification, explosion locale et injection de fragments classiques.
+## Baseline aleatoire
+
+`random-bruteforce.py` sert de comparaison avec une strategie volontairement simple : tirer des grilles initiales au hasard, les simuler, puis garder la meilleure.
+
+Exemple :
+
+```bash
+python3 random-bruteforce.py --target block --steps 5 --runs 5 --show-best
+```
+
+Options principales :
+
+- `--target block|blinker|glider` : cible predefinie ;
+- `--steps` : nombre de generations a simuler ;
+- `--runs` : nombre de runs independants ;
+- `--max-iterations` : limite d'iterations par run ;
+- `--samples-per-iteration` : nombre de candidats tires par iteration ;
+- `--seed` : graine aleatoire reproductible ;
+- `--show-best` : affiche la meilleure grille initiale trouvee.
+
+## Pattern Hunter en pause
+
+La premiere version du projet explorait automatiquement des motifs inhabituels du jeu de la vie avec un algorithme genetique Quality-Diversity.
+
+Cette piste est mise en pause pour l'instant. Le code et les tests associes ont ete deplaces dans `archive/` afin de garder l'historique sans melanger les priorites actuelles.
