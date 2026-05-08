@@ -10,29 +10,29 @@ simuler(G0, X) ~= cible
 
 ## Architecture du programme
 
-Le projet est volontairement decoupe pour que chaque fichier ait une responsabilite claire.
+Le projet est volontairement découpé pour que chaque fichier ait une responsabilité claire.
 
 - `life_rules.py` : règles classiques du jeu de la vie. Ce fichier ne contient pas l'algorithme génétique.
 - `reverse_search_algorithm.py` : recherche inverse par algorithme génétique. Ce fichier ne contient pas de Tkinter ni d'Eniseboard.
-- `app_state.py` : etat courant de l'application.
+- `app_state.py` : état courant de l'application.
 - `ui_app.py` : interface graphique, modes, boutons, barre de progression et fenêtre population.
-- `reverse-search.py` : point d'entree historique.
+- `reverse-search.py` : point d'entrée historique.
 
 Cette séparation permet de tester l'algorithme sans ouvrir de fenêtre graphique.
 
-## Regles normales du jeu de la vie
+## Règles normales du jeu de la vie
 
 La fonction centrale est `generation_suivante`.
 
 Pour chaque cellule :
 
 - une cellule vivante survit avec 2 ou 3 voisines vivantes ;
-- une cellule morte nait avec exactement 3 voisines vivantes ;
+- une cellule morte naît avec exactement 3 voisines vivantes ;
 - dans tous les autres cas, la cellule devient ou reste morte.
 
 La fonction `simuler(grille, X)` applique cette règle `X` fois. La fonction `historique_evolution` garde toutes les grilles intermédiaires pour l'affichage.
 
-## Pourquoi le probleme inverse est difficile
+## Pourquoi le problème inverse est difficile
 
 La grille fait `24 * 24 = 576` cellules. Chaque cellule peut être morte ou vivante. Tester toutes les grilles initiales possibles demanderait :
 
@@ -40,26 +40,26 @@ La grille fait `24 * 24 = 576` cellules. Chaque cellule peut être morte ou viva
 2^576
 ```
 
-possibilites. C'est inutilisable en pratique.
+possibilités. C'est inutilisable en pratique.
 
-Le programme utilise donc une recherche approchee :
+Le programme utilise donc une recherche approchée :
 
 - il cherche seulement dans une zone autour de la cible ;
 - il utilise une population de candidats ;
 - il réutilise les meilleurs candidats pour créer les générations suivantes.
 
-## Etat du solveur
+## État du solveur
 
 `initialiser_solveur` construit un `SolverState`.
 
-Cet etat contient :
+Cet état contient :
 
 - la cible ;
 - le nombre de générations ;
 - la zone de recherche ;
-- la carte de distance a la cible ;
+- la carte de distance à la cible ;
 - la population courante ;
-- le cache d'evaluations ;
+- le cache d'évaluations ;
 - la meilleure solution globale ;
 - le dernier instantané pédagogique.
 
@@ -79,62 +79,62 @@ Intuition : si une cellule doit être vivante dans la cible finale, ses ancêtre
 
 ## Carte de distance
 
-`construire_carte_distance_cible` calcule, pour chaque cellule, sa distance a la cellule cible vivante la plus proche.
+`construire_carte_distance_cible` calcule, pour chaque cellule, sa distance à la cellule cible vivante la plus proche.
 
-Cette carte sert a deux choses :
+Cette carte sert à deux choses :
 
 - créer plus souvent des cellules vivantes près de la cible ;
-- penaliser davantage les cellules parasites loin du motif final.
+- pénaliser davantage les cellules parasites loin du motif final.
 
-La distance utilisee est la distance de Chebyshev :
+La distance utilisée est la distance de Chebyshev :
 
 ```text
 distance = max(abs(ligne - ligne_cible), abs(colonne - colonne_cible))
 ```
 
-Elle est adaptee au jeu de la vie, car les voisins diagonaux comptent aussi.
+Elle est adaptée au jeu de la vie, car les voisins diagonaux comptent aussi.
 
 ## Population initiale
 
 `creer_population_initiale` fabrique une population variée :
 
-- la grille actuellement dessinee ;
-- la cible elle-meme comme point de depart simple ;
-- des graines locales pour les cibles tres clairsemees ;
-- des versions bruitees de la cible ;
+- la grille actuellement dessinée ;
+- la cible elle-même comme point de départ simple ;
+- des graines locales pour les cibles très clairsemées ;
+- des versions bruitées de la cible ;
 - des candidats aléatoires guidés par la distance à la cible ;
-- plusieurs densites de depart.
+- plusieurs densités de départ.
 
-Cette diversite est importante : certains motifs viennent d'une grille tres sparse, d'autres d'une grille plus dense.
+Cette diversité est importante : certains motifs viennent d'une grille très sparse, d'autres d'une grille plus dense.
 
 ## Graines locales pour petites cibles
 
-Les cibles tres simples posent un piege a l'algorithme genetique : le bon ancetre peut contenir seulement 3 ou 4 cellules, donc une population aleatoire produit souvent trop de parasites et la recherche stagne.
+Les cibles très simples posent un piège à l'algorithme génétique : le bon ancêtre peut contenir seulement 3 ou 4 cellules, donc une population aléatoire produit souvent trop de parasites et la recherche stagne.
 
-Pour corriger cela sans changer de famille d'algorithme, `creer_graines_locales_cible` ajoute une petite phase deterministe au lancement :
+Pour corriger cela sans changer de famille d'algorithme, `creer_graines_locales_cible` ajoute une petite phase déterministe au lancement :
 
-1. verifier que la cible est clairsemee ;
-2. construire une petite boite autour de la cible ;
-3. enumerer les combinaisons de 1 a 5 cellules vivantes dans cette boite ;
-4. simuler ces mini-candidats pendant `X` generations ;
-5. garder seulement les meilleurs comme graines de depart.
+1. vérifier que la cible est clairsemée ;
+2. construire une petite boîte autour de la cible ;
+3. énumérer les combinaisons de 1 à 5 cellules vivantes dans cette boîte ;
+4. simuler ces mini-candidats pendant `X` générations ;
+5. garder seulement les meilleurs comme graines de départ.
 
-Cette phase retrouve par exemple l'ancetre perpendiculaire d'un blinker de 3 cellules. Elle est volontairement bornee : elle ne s'active que si la cible est petite, si la boite locale reste petite et si le nombre de generations reste raisonnable.
+Cette phase retrouve par exemple l'ancêtre perpendiculaire d'un blinker de 3 cellules. Elle est volontairement bornée : elle ne s'active que si la cible est petite, si la boîte locale reste petite et si le nombre de générations reste raisonnable.
 
-Pour rester rapide, ces mini-candidats ne sont pas simules comme des grilles completes. Ils sont simules comme des ensembles de cellules vivantes, ce qui rend leur cout proportionnel au nombre de cellules actives plutot qu'aux `576` cases du plateau.
+Pour rester rapide, ces mini-candidats ne sont pas simulés comme des grilles complètes. Ils sont simulés comme des ensembles de cellules vivantes, ce qui rend leur coût proportionnel au nombre de cellules actives plutôt qu'aux `576` cases du plateau.
 
-En cas de stagnation, les meilleures graines locales peuvent aussi etre reinjectees dans la population avant les injections aleatoires classiques. Cela relance la recherche autour de structures plausibles au lieu d'ajouter seulement du bruit.
+En cas de stagnation, les meilleures graines locales peuvent aussi être réinjectées dans la population avant les injections aléatoires classiques. Cela relance la recherche autour de structures plausibles au lieu d'ajouter seulement du bruit.
 
-## Evaluation d'un individu
+## Évaluation d'un individu
 
 Un individu est une grille initiale candidate.
 
-Pour l'evaluer :
+Pour l'évaluer :
 
 1. On simule l'individu pendant `X` générations.
 2. On compare le résultat à la cible.
 3. On calcule une erreur.
-4. On ajoute une tres petite penalite si la grille initiale est chargee.
+4. On ajoute une très petite pénalité si la grille initiale est chargée.
 
 Le score de tri vaut :
 
@@ -142,9 +142,9 @@ Le score de tri vaut :
 score_tri = erreur_cible + cellules_initiales * PENALITE_CELLULE_INITIALE
 ```
 
-La penalite sur les cellules initiales est minuscule. Elle sert seulement a departager deux solutions presque equivalentes.
+La pénalité sur les cellules initiales est minuscule. Elle sert seulement à départager deux solutions presque équivalentes.
 
-## Erreur par rapport a la cible
+## Erreur par rapport à la cible
 
 Le score distingue :
 
@@ -158,33 +158,33 @@ PENALITE_FAUX_NEGATIF = 4
 PENALITE_FAUX_POSITIF = 1
 ```
 
-Cela evite que l'algorithme prefere des grilles presque vides. Les cellules en trop loin de la cible recoivent aussi une penalite de distance.
+Cela évite que l'algorithme préfère des grilles presque vides. Les cellules en trop loin de la cible reçoivent aussi une pénalité de distance.
 
 ## Cache
 
-Une meme grille peut reapparaitre dans la population, par exemple parce qu'elle est elite ou parce qu'un croisement la reproduit.
+Une même grille peut réapparaître dans la population, par exemple parce qu'elle est élite ou parce qu'un croisement la reproduit.
 
 `evaluer_individu` transforme la grille en clé immuable avec `cle_grille`. Si cette clé est déjà dans le cache, le solveur réutilise le résultat simulé et l'erreur.
 
-Le cache ameliore le temps reel, mais ne change pas le pire cas theorique.
+Le cache améliore le temps réel, mais ne change pas le pire cas théorique.
 
 ## Une génération génétique
 
-`avancer_solveur_une_generation` suit une sequence concrete :
+`avancer_solveur_une_generation` suit une séquence concrète :
 
-1. Evaluer toute la population.
+1. Évaluer toute la population.
 2. Trier les individus par score.
-3. Tenter une petite amelioration locale du meilleur individu.
-4. Mettre a jour le meilleur global.
+3. Tenter une petite amélioration locale du meilleur individu.
+4. Mettre à jour le meilleur global.
 5. Arrêter si une solution exacte est trouvée.
-6. Garder les elites.
-7. Si la recherche stagne, reinjecter quelques graines locales.
+6. Garder les élites.
+7. Si la recherche stagne, réinjecter quelques graines locales.
 8. Injecter quelques nouveaux candidats aléatoires.
 9. Remplir le reste par sélection, croisement et mutation.
 10. Supprimer les doublons.
 11. Produire un instantané pour l'interface.
 
-## Selection, croisement, mutation
+## Sélection, croisement, mutation
 
 La sélection utilise un tournoi : on tire quelques candidats au hasard, puis on garde le meilleur comme parent.
 
@@ -192,21 +192,21 @@ Le croisement est uniforme : pour chaque cellule de la zone de recherche, l'enfa
 
 La mutation est guidée :
 
-- pres de la cible, elle est un peu plus forte ;
+- près de la cible, elle est un peu plus forte ;
 - loin de la cible, elle est un peu plus faible.
 
 Si le solveur stagne, le taux de mutation et le taux d'injection aléatoire augmentent. Cela force la recherche à explorer de nouvelles pistes.
 
-Pour les cibles clairsemees, les densites aleatoires sont aussi adaptees a la taille de la zone de recherche. Le solveur essaie davantage de candidats tres peu charges, ce qui evite que les petites cibles soient noyees sous des cellules parasites.
+Pour les cibles clairsemées, les densités aléatoires sont aussi adaptées à la taille de la zone de recherche. Le solveur essaie davantage de candidats très peu chargés, ce qui évite que les petites cibles soient noyées sous des cellules parasites.
 
-## Amelioration locale
+## Amélioration locale
 
-Le meilleur candidat de la generation subit quelques tests simples :
+Le meilleur candidat de la génération subit quelques tests simples :
 
 1. choisir une cellule au hasard dans la zone de recherche ;
 2. inverser cette cellule ;
-3. evaluer le candidat modifie ;
-4. garder la modification si elle ameliore le score.
+3. évaluer le candidat modifié ;
+4. garder la modification si elle améliore le score.
 
 Cette partie agit comme une petite recherche locale greffée sur l'algorithme génétique.
 
@@ -216,8 +216,8 @@ Cette partie agit comme une petite recherche locale greffée sur l'algorithme g�
 
 Il contient :
 
-- tous les individus evalues ;
-- les meilleurs de la generation precedente ;
+- tous les individus évalués ;
+- les meilleurs de la génération précédente ;
 - le meilleur global ;
 - le taux de mutation ;
 - le taux d'injection ;
@@ -243,84 +243,74 @@ Si la solution n'est pas exacte, l'interface regarde les cellules manquantes, le
 
 Cette recommandation n'est pas une preuve mathématique. C'est une aide de lecture pour guider les essais suivants.
 
-## Complexite
+## Complexité
 
-### Notations
+### Notations utiles
 
-On separe les constantes du programme et les paramètres qui peuvent varier :
+On garde seulement les notations nécessaires :
 
-- `R` : nombre de lignes du plateau ;
-- `S` : nombre de colonnes du plateau ;
-- `N = R * S` : nombre total de cellules. Dans l'application, `N = 24 * 24 = 576` ;
+- `N` : nombre total de cellules du plateau. Ici `N = 24 * 24 = 576` ;
+- `X` : nombre de générations du jeu de la vie simulées pour tester un candidat ;
+- `P` : taille de la population génétique ;
+- `L` : nombre d'essais d'amélioration locale ;
+- `G` : nombre maximal de générations génétiques ;
+- `C` : taille maximale du cache ;
 - `T` : nombre de cellules vivantes dans la cible ;
-- `A` : nombre de cellules dans la zone de recherche. On a toujours `A <= N` ;
-- `X` : nombre de generations du jeu de la vie simulees pour evaluer un candidat ;
-- `P` : taille de la population genetique ;
-- `E` : nombre d'elites conservees ;
-- `L` : nombre d'essais d'amelioration locale ;
-- `G` : nombre maximal de generations genetiques ;
-- `C` : taille maximale du cache d'evaluations ;
-- `B` : nombre de cases dans la petite boite des graines locales ;
-- `M` : nombre maximal de cellules vivantes dans une graine locale ;
-- `Q` : nombre de combinaisons de graines locales testees.
+- `Q` : nombre de mini-graines testées au lancement.
 
-Dans la configuration actuelle :
+Les valeurs principales du programme sont :
 
 ```text
+N = 576
 P = 120
-E = 14
 L = 18
 G = 420
 C = 8000
-B <= 18
-M <= 5
-X <= 8 pour activer les graines locales
 ```
 
-Le solveur travaille donc sur un plateau fixe dans l'interface, mais l'analyse ci-dessous garde `N`, `P`, `G` et `X` variables pour montrer le comportement general de l'algorithme.
+### Évaluation d'un candidat
 
-### Cout des briques de base
+Un candidat est une grille initiale possible. Pour l'évaluer, le programme le simule pendant `X` générations, compare le résultat à la cible, calcule un score, puis garde les grilles utiles dans l'évaluation.
 
-Une generation du jeu de la vie parcourt les `N` cellules. Pour chaque cellule, `compter_voisins` teste au plus 8 voisines, donc un nombre constant d'operations. Le cout d'une generation est donc :
+Une génération du jeu de la vie parcourt les `N` cellules. Pour chaque cellule, on regarde au plus 8 voisines. Le facteur 8 est constant, donc :
 
 ```text
-O(8 * N) = O(N)
+coût d'une génération du jeu = O(N)
 ```
 
-Simuler un candidat pendant `X` generations coute :
+Simuler `X` générations coûte donc :
 
 ```text
 O(X * N)
 ```
 
-L'evaluation complete d'un individu ne contient pas seulement cette simulation. Elle fait aussi :
+Les autres opérations de l'évaluation parcourent aussi la grille :
 
-- `cle_grille` pour produire la cle du cache : `O(N)` ;
-- `simuler` si l'individu n'est pas deja dans le cache : `O(X * N)` ;
+- `cle_grille` pour produire la clé du cache : `O(N)` ;
 - `erreur_par_rapport_a_cible` : `O(N)` ;
 - `score_exactitude` : `O(N)` ;
 - `nombre_cellules_vivantes` : `O(N)` ;
-- des copies de grilles pour stocker l'evaluation : `O(N)`.
+- copies de grilles : `O(N)`.
 
-Le cout d'une evaluation non trouvee dans le cache est donc :
+Le coût complet d'une évaluation absente du cache est donc :
 
 ```text
-O(N + X * N + N + N + N + N) = O((X + 1) * N)
+O(X * N + N) = O((X + 1) * N)
 ```
 
-Comme `X >= 1` dans les usages normaux du solveur, on peut simplifier en :
+Comme `X >= 1`, on retient :
 
 ```text
 O(X * N)
 ```
 
-Une evaluation trouvee dans le cache evite la simulation et le recalcul de l'erreur, mais elle doit quand meme construire la cle et copier les grilles retournees. Son cout est donc :
+Si le candidat est déjà dans le cache, la simulation est évitée. Il reste la clé et les copies :
 
 ```text
 O(N)
 ```
 
-Le cache ameliore donc le temps reel quand beaucoup d'individus reapparaissent, mais il ne change pas le pire cas : dans le pire cas, chaque candidat est nouveau et doit etre simule.
+Le cache accélère donc les cas réels, mais le pire cas reste `O(X * N)` par candidat, car tous les candidats peuvent être différents.
 
 ### Initialisation du solveur
 
@@ -336,15 +326,15 @@ O(N)
 O(N * T)
 ```
 
-Comme `T <= N`, le pire cas theorique est :
+Comme `T <= N`, le pire cas théorique est :
 
 ```text
 O(N^2)
 ```
 
-En pratique, beaucoup de cibles ont peu de cellules vivantes, donc ce cout est souvent plus proche de `O(N * T)` avec `T` petit.
+En pratique, beaucoup de cibles ont peu de cellules vivantes, donc ce coût est souvent plus proche de `O(N * T)` avec `T` petit.
 
-`creer_population_initiale` construit jusqu'a `P` grilles. Certaines operations copient une grille complete (`O(N)`), d'autres generent seulement la zone active (`O(A)`), mais chaque individu est stocke comme une grille de taille `N`. Le cout total est donc borne par :
+`creer_population_initiale` construit jusqu'à `P` grilles. Même quand un individu est généré seulement autour de la cible, il est stocké comme une grille complète de `N` cellules. Le coût total est donc borné par :
 
 ```text
 O(P * N)
@@ -352,164 +342,94 @@ O(P * N)
 
 ### Graines locales
 
-Les graines locales ne sont creees que si la cible est clairsemee et si `X` reste petit. La petite boite contient `B` cases, et le programme teste toutes les combinaisons de taille `1` a `M`. Le nombre de graines candidates testees est :
+Les graines locales sont une petite recherche déterministe ajoutée au début pour les cibles très simples. Le programme prend une petite boîte autour de la cible, puis teste les combinaisons de 1 à 5 cellules vivantes.
+
+Avec les limites actuelles :
 
 ```text
-Q = somme_{k=1..M} C(B, k)
-```
-
-Avec les bornes du programme :
-
-```text
-B <= 18
-M <= 5
+boîte <= 18 cases
+graine <= 5 cellules vivantes
 Q <= C(18,1) + C(18,2) + C(18,3) + C(18,4) + C(18,5)
-Q <= 18 + 153 + 816 + 3060 + 8568
 Q <= 12615
 ```
 
-Chaque graine est simulee avec `simuler_cellules_vivantes`, qui ne parcourt pas tout le plateau. Elle parcourt les cellules vivantes et leurs voisines. Si `K_t` est le nombre de cellules vivantes a l'etape `t`, une simulation coute :
-
-```text
-O(somme_{t=0..X-1} K_t)
-```
-
-car chaque cellule vivante produit au plus 8 voisins a compter. Si on note `K = max(K_t)` pendant cette simulation, on obtient la borne simple :
+Ces graines ne sont pas simulées comme des grilles complètes. Elles sont simulées comme des ensembles de cellules vivantes. Si `K` est le nombre maximal de cellules actives pendant cette simulation, une graine coûte :
 
 ```text
 O(X * K)
 ```
 
-La comparaison sparse avec la cible coute `O(T + K)`. Le cout total des graines locales est donc :
+Après simulation, il faut aussi comparer la graine à la cible, ce qui coûte `O(T + K)`. Toutes les graines locales coûtent donc :
 
 ```text
 O(Q * (X * K + T + K) + Q log Q)
 ```
 
-Le terme `Q log Q` vient du tri des graines candidates avant de garder les meilleures. Comme `B`, `M`, `Q` et `X` sont strictement plafonnes par la configuration pour cette phase, ce cout est borne en pratique. Il reste neanmoins important de l'ecrire : les graines locales sont une enumeration combinatoire controlee, pas une operation constante en theorie si on retirait ces plafonds.
+Le `Q log Q` vient du tri des graines pour garder les meilleures. En pratique, cette phase reste bornée parce que `Q` est plafonné et qu'elle ne s'active que pour des petites cibles.
 
-### Une generation genetique
+### Une génération génétique
 
-Une generation de `avancer_solveur_une_generation` contient plusieurs etapes.
+Une génération de `avancer_solveur_une_generation` contient quatre coûts importants.
 
-1. Evaluation de la population :
-
-```text
-P evaluations * O(X * N) = O(P * X * N)
-```
-
-2. Tri de la population evaluee :
+1. Évaluer la population :
 
 ```text
-O(P log P)
+P évaluations * O(X * N) = O(P * X * N)
 ```
 
-3. Amelioration locale du meilleur individu :
+2. Trier la population par score :
 
-Le meilleur candidat est evalue, puis `L` voisins obtenus par inversion d'une cellule sont testes. Dans le pire cas, aucun n'est dans le cache :
-
-```text
-O((L + 1) * X * N)
-```
-
-4. Nouveau tri apres l'amelioration locale :
-
-Le code insere le candidat local puis retrie si necessaire une liste de taille environ `P + 1` :
+Le code trie la population évaluée, puis peut retrier après l'amélioration locale. Deux tris restent dans le même ordre de grandeur :
 
 ```text
 O(P log P)
 ```
 
-5. Creation des instantanes pedagogiques :
+3. Tester l'amélioration locale du meilleur candidat :
 
-Le snapshot copie jusqu'a `P` evaluations, et chaque evaluation contient une grille initiale et une grille resultat. Le cout est donc :
+Le solveur essaie `L` petites mutations autour du meilleur individu. Dans le pire cas, chaque essai doit être simulé :
+
+```text
+O(L * X * N)
+```
+
+4. Construire la génération suivante :
+
+Les élites sont copiées, l'instantané pédagogique est créé, les injections sont ajoutées, les enfants sont croisés puis mutés, et les doublons sont supprimés. Toutes ces opérations parcourent des grilles ou des zones de grille. Comme la zone de recherche ne peut pas dépasser le plateau, ce coût est borné par :
 
 ```text
 O(P * N)
 ```
 
-6. Conservation des elites :
-
-Copier `E` grilles coute :
+En additionnant :
 
 ```text
-O(E * N)
+O(P * X * N + P log P + L * X * N + P * N)
 ```
 
-Comme `E <= P`, cette etape est incluse dans `O(P * N)`.
-
-7. Injections aleatoires et relances locales :
-
-Chaque nouvel individu aleatoire parcourt la zone active `A`, puis stocke une grille de taille `N`. Les relances locales copient des grilles completes et peuvent muter `A` cases. Pour au plus `P` individus :
-
-```text
-O(P * (N + A))
-```
-
-Comme `A <= N`, cela devient :
-
-```text
-O(P * N)
-```
-
-8. Selection, croisement et mutation des enfants :
-
-La selection par tournoi tire au plus 5 candidats, donc elle coute `O(1)` par parent. Le croisement cree une grille puis remplit la zone active, et la mutation parcourt aussi la zone active :
-
-```text
-O(N + A) par enfant
-```
-
-Pour au plus `P` enfants :
-
-```text
-O(P * (N + A)) = O(P * N)
-```
-
-9. Suppression des doublons :
-
-Pour chaque individu, `cle_grille` parcourt `N` cellules. Si des remplacements aleatoires sont necessaires, ils sont aussi bornes par la taille de population. Le cout est donc :
-
-```text
-O(P * N)
-```
-
-En additionnant les etapes d'une generation genetique :
-
-```text
-O(P * X * N)
-+ O(P log P)
-+ O((L + 1) * X * N)
-+ O(P log P)
-+ O(P * N)
-+ O(P * N)
-+ O(P * N)
-+ O(P * N)
-```
-
-Ce qui donne :
+On regroupe les évaluations de population et les essais locaux :
 
 ```text
 O((P + L) * X * N + P log P + P * N)
 ```
 
-Comme `X >= 1`, le terme `P * N` est absorbe par `P * X * N`, donc la borne usuelle devient :
+Comme `X >= 1`, le terme `P * N` est inclus dans `P * X * N`. La complexité d'une génération génétique est donc :
 
 ```text
 O((P + L) * X * N + P log P)
 ```
 
-Si `P log P` est negligeable devant les simulations, ce qui est le cas avec un plateau de 576 cellules et des simulations sur plusieurs generations, on peut retenir le terme dominant :
+Dans ce programme, le terme dominant est presque toujours la simulation des candidats. On peut donc résumer le coût principal par :
 
 ```text
 O((P + L) * X * N)
 ```
 
-Cette simplification est correcte seulement apres avoir verifie les autres couts : elle n'ignore pas le tri, les copies et le dedoublonnage, elle constate simplement qu'ils sont domines par les simulations dans le regime normal du programme.
+Cette simplification reste rigoureuse : le tri, les copies et le dédoublonnage ont été comptés avant d'être dominés.
 
-### Recherche complete
+### Recherche complète
 
-La recherche effectue au plus `G` generations genetiques. Le cout total hors initialisation est donc :
+Le solveur effectue au plus `G` générations génétiques. Le coût total hors initialisation est donc :
 
 ```text
 O(G * ((P + L) * X * N + P log P))
@@ -519,8 +439,7 @@ En ajoutant l'initialisation et les graines locales :
 
 ```text
 O(
-  N
-  + N * T
+  N * T
   + P * N
   + Q * (X * K + T + K)
   + Q log Q
@@ -528,7 +447,7 @@ O(
 )
 ```
 
-La borne de pire cas en fonction de `N`, en utilisant `T <= N` et `A <= N`, est :
+Avec `T <= N`, la partie initialisation a pour pire cas `O(N^2)`. La formule de pire cas devient donc :
 
 ```text
 O(
@@ -540,48 +459,25 @@ O(
 )
 ```
 
-Dans la configuration reelle, `Q` est plafonne, `P`, `L`, `G` et `C` sont fixes par `SearchConfig`, et `N = 576`. Le temps d'execution observe depend donc surtout de :
+Dans la configuration réelle, `N`, `P`, `L`, `G` et `Q` sont plafonnés. Le temps d'exécution observé dépend donc surtout de :
 
-- `X`, car chaque evaluation simule plus ou moins longtemps ;
-- `G`, car il fixe le nombre maximal de generations genetiques ;
-- le nombre de repetitions dans la population, car le cache peut transformer une evaluation `O(X * N)` en `O(N)`.
+- `X`, car chaque évaluation simule plus ou moins longtemps ;
+- le nombre de générations génétiques réellement exécutées ;
+- le nombre de répétitions dans la population, car le cache peut transformer une évaluation `O(X * N)` en `O(N)`.
 
-### Memoire
+### Mémoire
 
-La population courante stocke `P` grilles de `N` cellules :
+La mémoire vient principalement de quatre endroits :
 
-```text
-O(P * N)
-```
+- population courante : `O(P * N)` ;
+- cache d'évaluations : `O(C * N)` ;
+- instantané pédagogique de la population : `O(P * N)` ;
+- historique d'évolution affiché par l'interface : `O(X * N)`.
 
-Le cache stocke jusqu'a `C` entrees. Chaque entree contient une cle de `N` cellules et une grille resultat de `N` cellules, plus quelques scores scalaires. Le cout est donc :
-
-```text
-O(C * N)
-```
-
-Les instantanes pedagogiques stockent jusqu'a `P` evaluations, chacune avec un individu et son resultat :
+La mémoire totale est donc :
 
 ```text
-O(P * N)
-```
-
-L'historique d'evolution affiche par l'interface contient `X + 1` grilles :
-
-```text
-O((X + 1) * N) = O(X * N)
-```
-
-La carte de distance et la cible occupent chacune une grille :
-
-```text
-O(N)
-```
-
-La memoire totale est donc :
-
-```text
-O(P * N + C * N + X * N + N)
+O(P * N + C * N + X * N)
 ```
 
 Ce qui se simplifie en :
@@ -590,13 +486,13 @@ Ce qui se simplifie en :
 O((P + C + X) * N)
 ```
 
-Le terme dominant est generalement le cache, car `C = 8000` peut etre beaucoup plus grand que `P = 120`.
+Le terme dominant est généralement le cache, car `C = 8000` peut être beaucoup plus grand que `P = 120`.
 
 ## Référence de comparaison aléatoire
 
 `random-bruteforce.py` sert de comparaison. Il réutilise les règles de `life_rules.py`, mais n'utilise pas l'algorithme génétique.
 
-Il repete :
+Il répète :
 
 1. tirer des candidats au hasard ;
 2. les simuler pendant `X` générations ;

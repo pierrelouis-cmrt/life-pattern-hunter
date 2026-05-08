@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 
 # ============================================================
-#  PARAMETRES GENERAUX
+#  PARAMÈTRES GÉNÉRAUX
 # ============================================================
 
 ROWS = 24
@@ -46,17 +46,17 @@ TARGETS = [
     "Novelty",
 ]
 TARGET_FR = {
-    "Exploration": "exploration creative",
-    "Soup Hunter": "soupes aleatoires",
+    "Exploration": "exploration créative",
+    "Soup Hunter": "soupes aléatoires",
     "Methuselah Lab": "laboratoire methuselah",
-    "Emitter / Ash": "emetteur / cendres",
-    "Weird Stable": "stabilite etrange",
+    "Emitter / Ash": "émetteur / cendres",
+    "Weird Stable": "stabilité étrange",
     "Still life": "vie stable",
     "Oscillator": "oscillateur",
     "Glider": "planeur",
     "Spaceship": "vaisseau",
     "Methuselah": "methuselah",
-    "Novelty": "nouveaute",
+    "Novelty": "nouveauté",
 }
 
 BASE_CANDIDATE_SIZE = 12
@@ -67,7 +67,7 @@ SOLVER_ITERATIONS_PER_TICK = 1
 
 
 # ============================================================
-#  PARAMETRES DE L'ALGORITHME GENETIQUE
+#  PARAMÈTRES DE L'ALGORITHME GÉNÉTIQUE
 # ============================================================
 
 POPULATION_SIZE = 60
@@ -110,7 +110,7 @@ DANGER_BUTTON_BG = "#fee2e2"
 
 
 # ============================================================
-#  TYPES DE DONNEES
+#  TYPES DE DONNÉES
 # ============================================================
 
 @dataclass
@@ -270,7 +270,7 @@ class GenerationTrace:
 
 
 # ============================================================
-#  ETAT GLOBAL DE L'INTERFACE
+#  ÉTAT GLOBAL DE L'INTERFACE
 # ============================================================
 
 state = {
@@ -657,7 +657,7 @@ def classify_history(history):
                     metrics.kind = "oscillator"
                 else:
                     metrics.kind = "stabilized"
-                    metrics.label = "oscillateur periode {}".format(period)
+                    metrics.label = "oscillateur période {}".format(period)
                 return metrics
 
             metrics.kind = "glider" if is_glider_signature(period, shift) else "spaceship"
@@ -683,14 +683,14 @@ def describe_metrics(metrics):
 
     names = {
         "empty": "motif vide",
-        "died": "mort apres {} generation(s)".format(metrics.generation),
+        "died": "mort après {} génération(s)".format(metrics.generation),
         "still_life": "vie stable",
-        "oscillator": "oscillateur periode {}".format(metrics.period),
-        "glider": "planeur periode {}, deplacement {}".format(metrics.period, metrics.shift),
-        "spaceship": "vaisseau periode {}, deplacement {}".format(metrics.period, metrics.shift),
-        "stabilized": "stabilise a t={} ({})".format(metrics.generation, metrics.label),
-        "exploding": "explosion controlee difficile",
-        "methuselah": "methuselah actif {} generations".format(metrics.lifespan),
+        "oscillator": "oscillateur période {}".format(metrics.period),
+        "glider": "planeur période {}, déplacement {}".format(metrics.period, metrics.shift),
+        "spaceship": "vaisseau période {}, déplacement {}".format(metrics.period, metrics.shift),
+        "stabilized": "stabilisé à t={} ({})".format(metrics.generation, metrics.label),
+        "exploding": "explosion contrôlée difficile",
+        "methuselah": "methuselah actif {} générations".format(metrics.lifespan),
         "unknown": "inconnu dans la limite d'analyse",
     }
     return names.get(metrics.kind, metrics.kind)
@@ -1656,11 +1656,11 @@ def candidate_trace(rank, evaluation):
 
 def explain_generation_text(trace):
     if trace is None:
-        return "Aucune generation genetique n'a encore ete evaluee."
+        return "Aucune génération génétique n'a encore été évaluée."
     best = trace.best_candidates[0] if trace.best_candidates else None
     best_text = "aucun meilleur candidat"
     if best is not None:
-        best_text = "{} score {:.1f}, Q {:.1f}, N {:.2f}, periode {}, vie {}".format(
+        best_text = "{} score {:.1f}, Q {:.1f}, N {:.2f}, période {}, vie {}".format(
             best.kind,
             best.score,
             best.quality_score,
@@ -1669,9 +1669,9 @@ def explain_generation_text(trace):
             best.lifespan,
         )
     return (
-        "Generation {gen}: {evaluated} candidats filtres rapidement, {full} evaluations completes. "
+        "Génération {gen}: {evaluated} candidats filtrés rapidement, {full} évaluations complètes. "
         "Archive QD: {archive} niches, {inserted} insertions. "
-        "Selection: {pa} parents depuis l'archive, {pp} depuis la population. "
+        "Sélection: {pa} parents depuis l'archive, {pp} depuis la population. "
         "Mutation moyenne {mut:.3f}, injections {inj}. Meilleur: {best}."
     ).format(
         gen=trace.generation,
@@ -1924,12 +1924,12 @@ def create_interface(board):
     ui["target_var"].trace_add("write", target_changed)
     tk.OptionMenu(panel, ui["target_var"], *[target_option(target) for target in TARGETS]).pack(fill="x", padx=8, pady=(0, 8))
 
-    tk.Label(panel, text="Periode visee", bg=UI_BG, fg=TEXT_COLOR, anchor="w").pack(fill="x", padx=8)
+    tk.Label(panel, text="Période visée", bg=UI_BG, fg=TEXT_COLOR, anchor="w").pack(fill="x", padx=8)
     ui["period_entry"] = tk.Entry(panel, justify="center")
     ui["period_entry"].insert(0, str(DEFAULT_PERIOD["Exploration"]))
     ui["period_entry"].pack(fill="x", padx=8, pady=(2, 8))
 
-    tk.Label(panel, text="Generations analysees", bg=UI_BG, fg=TEXT_COLOR, anchor="w").pack(fill="x", padx=8)
+    tk.Label(panel, text="Générations analysées", bg=UI_BG, fg=TEXT_COLOR, anchor="w").pack(fill="x", padx=8)
     ui["max_steps_entry"] = tk.Entry(panel, justify="center")
     ui["max_steps_entry"].insert(0, str(DEFAULT_MAX_STEPS))
     ui["max_steps_entry"].pack(fill="x", padx=8, pady=(2, 10))
@@ -1944,9 +1944,9 @@ def create_interface(board):
     section(panel, "Motif")
     create_button(panel, "Classifier (C)", lambda: classify_current(board))
     create_button(panel, "Lire / pause (Espace)", lambda: toggle_playback(board))
-    create_button(panel, "Etape suivante (N)", lambda: step_once(board))
-    create_button(panel, "Aleatoire (R)", lambda: randomize_grid(board))
-    create_button(panel, "Prochaine decouverte", lambda: show_next_discovery(board))
+    create_button(panel, "Étape suivante (N)", lambda: step_once(board))
+    create_button(panel, "Aléatoire (R)", lambda: randomize_grid(board))
+    create_button(panel, "Prochaine découverte", lambda: show_next_discovery(board))
     create_button(panel, "Archive", lambda: show_archive_best(board))
     create_button(panel, "Exporter console", lambda: export_current(board))
     create_button(panel, "Exporter archive", lambda: export_all_discoveries(board))
@@ -1964,7 +1964,7 @@ def create_interface(board):
     ui["status_label"].pack(fill="x", padx=8, pady=(12, 0))
     ui["trace_label"] = tk.Label(
         panel,
-        text="Processus genetique en attente.",
+        text="Processus génétique en attente.",
         bg=UI_BG,
         fg="#334155",
         justify="left",
@@ -2009,12 +2009,12 @@ def update_interface():
         return
 
     if state["playback_active"] and state["history"]:
-        status.configure(text="Lecture generation {} / {}".format(state["history_index"], len(state["history"]) - 1))
+        status.configure(text="Lecture génération {} / {}".format(state["history_index"], len(state["history"]) - 1))
         return
 
     metrics = state["last_metrics"]
     if metrics is not None:
-        status.configure(text="{} | vivantes {} | diversite {} | mobilite {:.1f}".format(
+        status.configure(text="{} | vivantes {} | diversité {} | mobilité {:.1f}".format(
             describe_metrics(metrics),
             count_live_cells(state["display_grid"] or state["grid"]),
             metrics.diversity,
@@ -2031,17 +2031,17 @@ def update_trace_label():
         return
     trace = state.get("generation_trace")
     if trace is None:
-        trace_label.configure(text="Processus genetique en attente.")
+        trace_label.configure(text="Processus génétique en attente.")
         return
     best_lines = []
     for item in trace.best_candidates[:3]:
         best_lines.append("#{} {} sc {:.1f} N {:.2f}".format(item.rank, item.kind, item.score, item.novelty_score))
     trace_label.configure(text=(
-        "Processus genetique\n"
-        "Eval rapide: {} | completes: {}\n"
+        "Processus génétique\n"
+        "Éval rapide: {} | complètes: {}\n"
         "Archive: {} niches | +{}\n"
         "Moy score {:.1f} | N moy {:.2f}\n"
-        "Diversite {} | stagnation {}\n"
+        "Diversité {} | stagnation {}\n"
         "{}"
     ).format(
         trace.evaluated_count,
@@ -2109,7 +2109,7 @@ def refresh_info(board):
             "deep" if config.deep else "fast",
         )
     else:
-        line = "Cible: {} | periode {} | analyse {} generations".format(
+        line = "Cible: {} | période {} | analyse {} générations".format(
             TARGET_FR[current_target()],
             current_period(),
             current_max_steps(),
@@ -2134,7 +2134,7 @@ def refresh_info(board):
     ))
 
     if state["history"]:
-        display_line(board, 3, "Generation {} / {} | cellules vivantes {} | zone de recherche en beige".format(
+        display_line(board, 3, "Génération {} / {} | cellules vivantes {} | zone de recherche en beige".format(
             state["history_index"],
             len(state["history"]) - 1,
             count_live_cells(state["display_grid"]),
@@ -2358,7 +2358,7 @@ def show_archive_best(board):
 def export_all_discoveries(board):
     discoveries = current_archive_discoveries()
     if not discoveries:
-        board.console("Aucune decouverte a exporter.")
+        board.console("Aucune découverte à exporter.")
         return
     board.console("=== EXPORT ARCHIVE QD ===")
     for index, discovery in enumerate(discoveries, start=1):
@@ -2451,13 +2451,13 @@ def initialize(board):
     create_interface(board)
     refresh_board(board)
     refresh_info(board)
-    board.console("Chasseur de motifs pret.")
-    board.console("Dessinez un motif, classifiez-le, lancez la recherche genetique ou exportez le meilleur motif.")
+    board.console("Chasseur de motifs prêt.")
+    board.console("Dessinez un motif, classifiez-le, lancez la recherche génétique ou exportez le meilleur motif.")
 
 
 def main():
     if eniseboard is None:
-        raise RuntimeError("eniseboard n'est pas installe. Lancez: pip install eniseboard")
+        raise RuntimeError("eniseboard n'est pas installé. Lancez: pip install eniseboard")
 
     eniseboard(
         hsize=COLS,

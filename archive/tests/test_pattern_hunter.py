@@ -337,7 +337,7 @@ class GeneticSearchTests(unittest.TestCase):
         )
         text = hunter.explain_generation_text(trace)
 
-        self.assertIn("Selection", text)
+        self.assertIn("Sélection", text)
         self.assertIn("Mutation", text)
         self.assertIn("Archive QD", text)
         self.assertIn("Meilleur", text)
