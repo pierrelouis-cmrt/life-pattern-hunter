@@ -77,13 +77,16 @@ Le problème est inverse : les règles du jeu de la vie sont faciles à applique
 Le solveur utilise donc un algorithme génétique :
 
 - créer une population de grilles initiales candidates ;
+- ajouter des graines locales quand la cible finale est très petite ;
 - simuler chaque candidate pendant le nombre de générations choisi ;
 - comparer le résultat à la cible ;
 - conserver les meilleurs candidats ;
-- créer de nouveaux candidats par sélection, croisement, mutation et injection aléatoire ;
+- créer de nouveaux candidats par sélection, croisement, mutation, graines locales et injection aléatoire ;
 - améliorer localement le meilleur candidat courant.
 
 Le score pénalise les cellules manquantes, les cellules en trop, les cellules parasites loin de la cible et, très légèrement, les grilles initiales trop chargées.
+
+Pour éviter la stagnation sur les cibles de quelques cellules, le solveur énumère maintenant de petits ancêtres possibles autour de la cible. Ces mini-candidats sont simulés sous forme d'ensemble de cellules vivantes, puis les meilleurs sont placés dans la population initiale et peuvent être réinjectés si la recherche stagne.
 
 ## Tests
 
@@ -93,4 +96,4 @@ Les tests unitaires ne dépendent pas de l'interface graphique :
 python3 -m unittest discover -s tests
 ```
 
-Ils couvrent les règles du jeu de la vie, le score, l'initialisation du solveur, les instantanés et l'arrêt sur solution exacte.
+Ils couvrent les règles du jeu de la vie, le score, l'initialisation du solveur, les graines locales, les instantanés et l'arrêt sur solution exacte.

@@ -1,12 +1,13 @@
 import random
 import unittest
 
-from life_rules import nouvelle_grille
+from life_rules import nombre_cellules_vivantes, nouvelle_grille, simuler
 from reverse_search_algorithm import (
     SearchConfig,
     avancer_solveur_une_generation,
     calculer_zone_recherche,
     construire_carte_distance_cible,
+    creer_graines_locales_cible,
     erreur_par_rapport_a_cible,
     evaluer_population,
     initialiser_solveur,
@@ -84,6 +85,28 @@ class ReverseSearchAlgorithmTests(unittest.TestCase):
         cible = grille_depuis_cellules([(2, 2)])
 
         self.assertEqual((0, 4, 0, 4), calculer_zone_recherche(cible, 2, config))
+
+    def test_local_seeds_find_sparse_blinker_ancestor(self):
+        config = self.small_config()
+        cible = grille_depuis_cellules([(2, 1), (2, 2), (2, 3)])
+        zone = calculer_zone_recherche(cible, 1, config)
+        carte = construire_carte_distance_cible(cible, config)
+
+        graines = creer_graines_locales_cible(cible, 1, zone, carte, config)
+
+        self.assertTrue(any(simuler(graine, 1) == cible for graine in graines))
+
+    def test_solver_solves_sparse_blinker_from_local_seed(self):
+        config = self.small_config()
+        cible = grille_depuis_cellules([(2, 1), (2, 2), (2, 3)])
+        solveur = initialiser_solveur(nouvelle_grille(0, 5, 5), cible, 1, config, random.Random(7))
+
+        avancer_solveur_une_generation(solveur)
+
+        self.assertTrue(solveur.termine)
+        self.assertEqual("solution exacte", solveur.raison_arret)
+        self.assertEqual(0, solveur.meilleure_erreur)
+        self.assertEqual(3, nombre_cellules_vivantes(solveur.meilleur_individu))
 
 
 if __name__ == "__main__":

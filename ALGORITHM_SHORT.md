@@ -19,14 +19,16 @@ Chaque individu est une grille initiale possible. Pour l'évaluer, on ne remonte
 ## Boucle principale
 
 1. Calculer une zone de recherche autour de la cible.
-2. Créer une population variée de grilles candidates.
-3. Simuler chaque candidat pendant `X` générations.
-4. Calculer son erreur par rapport à la cible.
-5. Garder les meilleurs candidats comme élites.
-6. Ajouter quelques candidats aléatoires pour conserver de la diversité.
-7. Produire des enfants par sélection, croisement et mutation.
-8. Tester quelques petites modifications locales du meilleur candidat.
-9. Recommencer jusqu'à solution exacte ou limite de générations.
+2. Si la cible est tres petite, créer quelques graines locales en enumerant de mini-ancetres plausibles.
+3. Créer une population variée de grilles candidates.
+4. Simuler chaque candidat pendant `X` générations.
+5. Calculer son erreur par rapport à la cible.
+6. Garder les meilleurs candidats comme élites.
+7. Ajouter quelques candidats aléatoires pour conserver de la diversité.
+8. Réinjecter des graines locales quand la recherche stagne.
+9. Produire des enfants par sélection, croisement et mutation.
+10. Tester quelques petites modifications locales du meilleur candidat.
+11. Recommencer jusqu'à solution exacte ou limite de générations.
 
 ## Score
 
@@ -41,6 +43,12 @@ Le programme penalise :
 
 Les cellules manquantes coûtent plus cher que les cellules en trop pour éviter que le solveur favorise des grilles presque vides.
 
+## Anti-stagnation
+
+Les cibles finales avec seulement quelques cellules sont difficiles pour un tirage aleatoire : une bonne solution peut etre tres precise, comme le blinker perpendiculaire qui produit une ligne de 3 cellules.
+
+Le solveur ajoute donc des **graines locales**. Pour une cible clairsemee, il enumere de petites grilles autour de la cible, les simule sous forme d'ensemble de cellules vivantes, puis garde les meilleures dans la population initiale. Si la recherche stagne, ces graines peuvent etre reinjectees avant les injections aleatoires.
+
 ## Complexite
 
 Avec :
@@ -50,6 +58,7 @@ Avec :
 - `P` individus ;
 - `L` essais locaux ;
 - `G` générations génétiques ;
+- `Q` graines locales bornees ;
 
 une simulation coûte :
 
@@ -68,5 +77,13 @@ et la recherche complète coûte au pire :
 ```text
 O(G * (P + L) * X * N)
 ```
+
+La création des graines locales ajoute seulement :
+
+```text
+O(Q * X * K)
+```
+
+`K` est le nombre de cellules actives pendant la simulation d'une mini-graine. Comme `Q` et la taille initiale des graines sont plafonnes, cette aide reste legere.
 
 La fenêtre `Voir population` n'ajoute pas de logique algorithmique : elle affiche les instantanés déjà produits par le solveur pour rendre la recherche compréhensible.

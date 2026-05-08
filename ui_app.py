@@ -1125,6 +1125,8 @@ def libelle_role(role):
         "dessin actuel": "dessin actuel",
         "cible naive": "cible naïve",
         "cible bruitee": "cible bruitée",
+        "graine locale": "graine locale",
+        "relance locale": "relance locale",
         "aléatoire guidé": "aléatoire guidé",
         "aleatoire guide": "aléatoire guidé",
         "remplacement doublon": "remplacement de doublon",
@@ -1146,6 +1148,10 @@ def description_role(role):
         return "issu d'un croisement puis muté"
     if "injection" in role_min:
         return "nouvel individu aléatoire pour relancer la diversité"
+    if "graine locale" in role_min:
+        return "petit ancêtre possible énuméré près de la cible"
+    if "relance locale" in role_min:
+        return "graine locale réinjectée après stagnation"
     if "amelioration" in role_min:
         return "petite recherche locale autour du meilleur"
     if "precedent" in role_min:

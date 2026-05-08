@@ -100,11 +100,30 @@ Elle est adaptee au jeu de la vie, car les voisins diagonaux comptent aussi.
 
 - la grille actuellement dessinee ;
 - la cible elle-meme comme point de depart simple ;
+- des graines locales pour les cibles tres clairsemees ;
 - des versions bruitees de la cible ;
 - des candidats aléatoires guidés par la distance à la cible ;
 - plusieurs densites de depart.
 
 Cette diversite est importante : certains motifs viennent d'une grille tres sparse, d'autres d'une grille plus dense.
+
+## Graines locales pour petites cibles
+
+Les cibles tres simples posent un piege a l'algorithme genetique : le bon ancetre peut contenir seulement 3 ou 4 cellules, donc une population aleatoire produit souvent trop de parasites et la recherche stagne.
+
+Pour corriger cela sans changer de famille d'algorithme, `creer_graines_locales_cible` ajoute une petite phase deterministe au lancement :
+
+1. verifier que la cible est clairsemee ;
+2. construire une petite boite autour de la cible ;
+3. enumerer les combinaisons de 1 a 5 cellules vivantes dans cette boite ;
+4. simuler ces mini-candidats pendant `X` generations ;
+5. garder seulement les meilleurs comme graines de depart.
+
+Cette phase retrouve par exemple l'ancetre perpendiculaire d'un blinker de 3 cellules. Elle est volontairement bornee : elle ne s'active que si la cible est petite, si la boite locale reste petite et si le nombre de generations reste raisonnable.
+
+Pour rester rapide, ces mini-candidats ne sont pas simules comme des grilles completes. Ils sont simules comme des ensembles de cellules vivantes, ce qui rend leur cout proportionnel au nombre de cellules actives plutot qu'aux `576` cases du plateau.
+
+En cas de stagnation, les meilleures graines locales peuvent aussi etre reinjectees dans la population avant les injections aleatoires classiques. Cela relance la recherche autour de structures plausibles au lieu d'ajouter seulement du bruit.
 
 ## Evaluation d'un individu
 
@@ -159,10 +178,11 @@ Le cache ameliore le temps reel, mais ne change pas le pire cas theorique.
 4. Mettre a jour le meilleur global.
 5. Arrêter si une solution exacte est trouvée.
 6. Garder les elites.
-7. Injecter quelques nouveaux candidats aléatoires.
-8. Remplir le reste par sélection, croisement et mutation.
-9. Supprimer les doublons.
-10. Produire un instantané pour l'interface.
+7. Si la recherche stagne, reinjecter quelques graines locales.
+8. Injecter quelques nouveaux candidats aléatoires.
+9. Remplir le reste par sélection, croisement et mutation.
+10. Supprimer les doublons.
+11. Produire un instantané pour l'interface.
 
 ## Selection, croisement, mutation
 
@@ -176,6 +196,8 @@ La mutation est guidée :
 - loin de la cible, elle est un peu plus faible.
 
 Si le solveur stagne, le taux de mutation et le taux d'injection aléatoire augmentent. Cela force la recherche à explorer de nouvelles pistes.
+
+Pour les cibles clairsemees, les densites aleatoires sont aussi adaptees a la taille de la zone de recherche. Le solveur essaie davantage de candidats tres peu charges, ce qui evite que les petites cibles soient noyees sous des cellules parasites.
 
 ## Amelioration locale
 
@@ -232,6 +254,7 @@ On note :
 - `L` : essais d'amelioration locale ;
 - `G` : nombre maximal de générations génétiques ;
 - `C` : taille maximale du cache.
+- `Q` : nombre de graines locales testees au lancement, borne par les paramètres.
 
 Une simulation coute :
 
@@ -250,6 +273,14 @@ Sur toute la recherche :
 ```text
 O(G * (P + L) * X * N)
 ```
+
+La phase de graines locales ajoute au lancement :
+
+```text
+O(Q * X * K)
+```
+
+`K` est le nombre de cellules actives pendant la simulation d'une mini-graine. En pratique `Q` est borne par une boite locale de 18 cases au maximum et les graines commencent avec au plus 5 cellules vivantes, donc cette phase reste petite devant la recherche genetique complete.
 
 La memoire utilisee est approximativement :
 
