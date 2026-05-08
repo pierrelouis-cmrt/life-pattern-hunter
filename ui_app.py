@@ -777,6 +777,8 @@ def gestion_souris(board, event):
     col = event["col"]
     if not (0 <= ligne < ROWS and 0 <= col < COLS):
         return
+    if state.mode_app == "resolution" and state.solveur_actif:
+        return
 
     if state.mode_app == "normal":
         grille = state.grille
