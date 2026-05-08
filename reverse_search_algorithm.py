@@ -1,7 +1,7 @@
-"""Solveur inverse par algorithme genetique.
+"""Solveur inverse par algorithme génétique.
 
 Le module contient uniquement la logique de recherche. L'interface graphique
-peut l'appeler generation par generation et lire les snapshots pedagogiques.
+peut l'appeler génération par génération et lire les instantanés pédagogiques.
 """
 
 from dataclasses import dataclass, field
@@ -286,12 +286,12 @@ def creer_population_initiale(grille_actuelle, cible, zone, carte_distance, conf
     for densite in densites:
         for _ in range(5):
             population.append(individu_aleatoire_guide(zone, carte_distance, densite, config, rng))
-            roles.append("aleatoire guide")
+            roles.append("aléatoire guidé")
 
     while len(population) < config.taille_population:
         densite = rng.choice(densites + [config.densite_initiale])
         population.append(individu_aleatoire_guide(zone, carte_distance, densite, config, rng))
-        roles.append("aleatoire guide")
+        roles.append("aléatoire guidé")
 
     return population[:config.taille_population], roles[:config.taille_population]
 
@@ -315,7 +315,7 @@ def population_sans_doublons(population, roles, zone, carte_distance, config, rn
         if cle not in vus:
             vus.add(cle)
             uniques.append(individu)
-            roles_uniques.append("remplacement doublon")
+        roles_uniques.append("remplacement de doublon")
 
     return uniques[:config.taille_population], roles_uniques[:config.taille_population]
 
@@ -485,7 +485,7 @@ def avancer_solveur_une_generation(solveur):
 
     if solveur.generation >= config.nb_generations_max:
         solveur.termine = True
-        solveur.raison_arret = "limite de generations"
+        solveur.raison_arret = "limite de générations"
         return solveur
 
     nouvelle_population = []

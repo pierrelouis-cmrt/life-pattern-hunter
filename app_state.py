@@ -1,4 +1,4 @@
-"""Etat applicatif partage par l'interface."""
+"""État applicatif partagé par l'interface."""
 
 from dataclasses import dataclass, field
 

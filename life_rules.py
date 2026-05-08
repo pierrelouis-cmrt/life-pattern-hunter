@@ -1,6 +1,6 @@
-"""Regles normales du jeu de la vie de Conway.
+"""Règles normales du jeu de la vie de Conway.
 
-Ce module ne connait ni Tkinter, ni Eniseboard, ni l'algorithme genetique.
+Ce module ne connaît ni Tkinter, ni Eniseboard, ni l'algorithme génétique.
 Il sert de socle testable pour les deux modes de l'application.
 """
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Point d'entree historique de Life Pattern Hunter."""
+"""Point d'entrée historique du chasseur de motifs du jeu de la vie."""
 
 try:
     from eniseboard import eniseboard

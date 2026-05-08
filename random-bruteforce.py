@@ -190,44 +190,46 @@ def afficher_grille(titre, grille):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Baseline brute force aleatoire pour la reverse search du jeu de la vie."
+        description="Référence de comparaison par force brute aléatoire pour la recherche inverse du jeu de la vie."
     )
-    parser.add_argument("--target", choices=("block", "blinker", "glider"), default="block")
-    parser.add_argument("--steps", type=int, default=5)
-    parser.add_argument("--runs", type=int, default=5)
-    parser.add_argument("--max-iterations", type=int, default=NB_GENERATIONS_GENETIQUES_MAX)
+    parser.add_argument("--target", "--cible", choices=("block", "blinker", "glider"), default="block", help="motif cible à chercher")
+    parser.add_argument("--steps", "--generations", type=int, default=5, help="nombre de générations à simuler")
+    parser.add_argument("--runs", "--essais", type=int, default=5, help="nombre d'essais indépendants")
+    parser.add_argument("--max-iterations", "--iterations-max", type=int, default=NB_GENERATIONS_GENETIQUES_MAX, help="nombre maximal d'itérations par essai")
     parser.add_argument(
         "--samples-per-iteration",
+        "--candidats-par-iteration",
         type=int,
         default=TAILLE_POPULATION + NB_ESSAIS_AMELIORATION_LOCALE,
+        help="nombre de candidats testés à chaque itération",
     )
-    parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--show-best", action="store_true")
+    parser.add_argument("--seed", "--graine", type=int, default=None, help="graine aléatoire optionnelle")
+    parser.add_argument("--show-best", "--afficher-meilleur", action="store_true", help="afficher la meilleure grille trouvée")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     if args.steps < 1:
-        raise SystemExit("--steps doit etre superieur ou egal a 1")
+        raise SystemExit("--steps doit être supérieur ou égal à 1")
     if args.runs < 1:
-        raise SystemExit("--runs doit etre superieur ou egal a 1")
+        raise SystemExit("--runs doit être supérieur ou égal à 1")
     if args.max_iterations < 1:
-        raise SystemExit("--max-iterations doit etre superieur ou egal a 1")
+        raise SystemExit("--max-iterations doit être supérieur ou égal à 1")
     if args.samples_per_iteration < 1:
-        raise SystemExit("--samples-per-iteration doit etre superieur ou egal a 1")
+        raise SystemExit("--samples-per-iteration doit être supérieur ou égal à 1")
 
     rng = random.Random(args.seed)
     cible = construire_cible(args.target)
     results = []
 
-    print("Baseline brute force aleatoire")
-    print("Target:", args.target)
-    print("Steps:", args.steps)
-    print("Runs:", args.runs)
-    print("Max iterations par run:", args.max_iterations)
-    print("Candidats par iteration:", args.samples_per_iteration)
-    print("Budget theorique par run: O(I * (P + L) * X * N)")
+    print("Référence de comparaison par force brute aléatoire")
+    print("Cible :", args.target)
+    print("Générations :", args.steps)
+    print("Essais :", args.runs)
+    print("Itérations maximales par essai :", args.max_iterations)
+    print("Candidats par itération :", args.samples_per_iteration)
+    print("Budget théorique par essai : O(I * (P + L) * X * N)")
     print()
 
     for run_index in range(1, args.runs + 1):
@@ -242,8 +244,8 @@ def main():
         results.append(result)
         status = "solution exacte" if result.solution_exacte else "solution imparfaite"
         print(
-            "Run {run}: {status}, erreur={erreur:.3f}, exactitude={exactitude:.2f}%, "
-            "iterations={iterations}, meilleur_a_iteration={best_iteration}, candidats={candidats}".format(
+            "Essai {run} : {status}, erreur={erreur:.3f}, exactitude={exactitude:.2f} %, "
+            "itérations={iterations}, meilleur_à_itération={best_iteration}, candidats={candidats}".format(
                 run=result.run,
                 status=status,
                 erreur=result.meilleure.erreur,
@@ -259,27 +261,27 @@ def main():
     total_candidates = sum(item.candidats_testes for item in results)
 
     print()
-    print("Resume")
+    print("Résumé")
     print("Meilleure erreur:", "{:.3f}".format(best.meilleure.erreur))
-    print("Meilleure exactitude:", "{:.2f}%".format(best.meilleure.exactitude))
-    print("Iteration ou la meilleure solution a ete trouvee:", best.meilleure.iteration)
-    print("Total candidats testes:", total_candidates)
-    print("Runs exacts:", "{}/{}".format(len(successes), args.runs))
+    print("Meilleure exactitude:", "{:.2f} %".format(best.meilleure.exactitude))
+    print("Itération où la meilleure solution a été trouvée:", best.meilleure.iteration)
+    print("Total candidats testés:", total_candidates)
+    print("Essais exacts:", "{}/{}".format(len(successes), args.runs))
 
     if successes:
         moyenne_iterations = sum(item.iterations for item in successes) / len(successes)
         print(
-            "Moyenne des iterations necessaires sur les runs reussis:",
+            "Moyenne des itérations nécessaires sur les essais réussis:",
             "{:.2f}".format(moyenne_iterations),
         )
     else:
-        print("Aucune solution exacte trouvee sur ces runs.")
+        print("Aucune solution exacte trouvée sur ces essais.")
 
     if args.show_best:
         print()
-        afficher_grille("Meilleure grille initiale:", best.meilleure.candidat)
+        afficher_grille("Meilleure grille initiale :", best.meilleure.candidat)
         print()
-        afficher_grille("Resultat simule:", best.meilleure.resultat)
+        afficher_grille("Résultat simulé :", best.meilleure.resultat)
 
 
 if __name__ == "__main__":

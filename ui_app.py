@@ -1,4 +1,4 @@
-"""Interface Eniseboard/Tkinter de Life Pattern Hunter."""
+"""Interface Eniseboard/Tkinter du chasseur de motifs du jeu de la vie."""
 
 import random
 import tkinter as tk
@@ -49,6 +49,9 @@ state = nouvel_etat()
 
 ui = {
     "panel": None,
+    "mode_controls_frame": None,
+    "normal_controls_frame": None,
+    "resolution_controls_frame": None,
     "mode_var": None,
     "steps_entry": None,
     "start_solver_button": None,
@@ -70,6 +73,9 @@ ui = {
     "population_frame": None,
     "population_step": 0,
     "population_after_id": None,
+    "info_frame": None,
+    "info_labels": [],
+    "info_rows_shifted": False,
 }
 
 
@@ -117,7 +123,65 @@ def fixer_taille_fenetre(root):
 
 
 def afficher_ligne(board, ligne, texte, couleur=TEXT_COLOR):
-    board.display(texte.ljust(140), row=ligne, col=0, color=couleur)
+    labels = ui.get("info_labels") or []
+    if 0 <= ligne < len(labels):
+        label = labels[ligne]
+        if label is not None and label.winfo_exists():
+            label.configure(text=texte, fg=couleur)
+            return
+
+    try:
+        board.display(texte.ljust(140), row=ligne, col=0, color=couleur)
+    except Exception:
+        pass
+
+
+def creer_panneau_infos(root):
+    ancien = ui.get("info_frame")
+    if ancien is not None and ancien.winfo_exists():
+        ancien.destroy()
+
+    if not ui["info_rows_shifted"]:
+        panel = ui.get("panel")
+        for widget in root.grid_slaves():
+            if widget is panel:
+                continue
+            info = widget.grid_info()
+            if int(info.get("column", 0)) == 0 and int(info.get("row", 0)) >= 1:
+                widget.grid(row=int(info["row"]) + 1)
+        ui["info_rows_shifted"] = True
+
+    frame = tk.Frame(root, bg=UI_BG, bd=1, relief=tk.SOLID, highlightthickness=0)
+    frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 6))
+    frame.columnconfigure(0, weight=1)
+    root.rowconfigure(1, weight=0)
+    ui["info_frame"] = frame
+    ui["info_labels"] = []
+
+    for index in range(4):
+        label = tk.Label(
+            frame,
+            text="",
+            bg=UI_BG,
+            fg=TEXT_COLOR,
+            anchor="w",
+            justify="left",
+            font=("TkDefaultFont", 9),
+            padx=8,
+            pady=2,
+        )
+        label.grid(row=index, column=0, sticky="ew")
+        ui["info_labels"].append(label)
+
+
+def definir_frame_visible(frame, visible):
+    if frame is None or not frame.winfo_exists():
+        return
+    if visible:
+        if not frame.winfo_ismapped():
+            frame.pack(fill="x")
+    elif frame.winfo_ismapped():
+        frame.pack_forget()
 
 
 def changer_mode(board):
@@ -146,13 +210,13 @@ def creer_interface(board):
         ui["panel"].destroy()
 
     panel = tk.Frame(root, bg=UI_BG, width=285)
-    panel.grid(row=0, column=1, rowspan=3, sticky="ns", padx=(8, 10), pady=10)
+    panel.grid(row=0, column=1, rowspan=4, sticky="ns", padx=(8, 10), pady=10)
     panel.grid_propagate(False)
     ui["panel"] = panel
 
     tk.Label(
         panel,
-        text="Life Pattern Hunter",
+        text="Chasseur de motifs du jeu de la vie",
         bg=UI_BG,
         fg=TEXT_COLOR,
         font=("TkDefaultFont", 13, "bold"),
@@ -174,42 +238,50 @@ def creer_interface(board):
             anchor="w",
         ).pack(fill="x", padx=8)
 
-    creer_titre_section(panel, "Jeu normal")
-    ui["normal_play_button"] = creer_bouton(panel, "Lire / pause", lambda: lancer_ou_arreter_jeu_normal(board), PRIMARY_BUTTON_BG)
-    ui["normal_step_button"] = creer_bouton(panel, "Step +1", lambda: avancer_jeu_normal(board))
-    ui["normal_random_button"] = creer_bouton(panel, "Grille aleatoire", lambda: remplir_initial_aleatoire(board))
+    controls = tk.Frame(panel, bg=UI_BG)
+    controls.pack(fill="x")
+    ui["mode_controls_frame"] = controls
 
-    creer_titre_section(panel, "Résolution")
-    tk.Label(panel, text="Steps", bg=UI_BG, fg=TEXT_COLOR, anchor="w").pack(fill="x", padx=8)
-    entree = tk.Entry(panel, justify="center")
+    normal_frame = tk.Frame(controls, bg=UI_BG)
+    ui["normal_controls_frame"] = normal_frame
+    creer_titre_section(normal_frame, "Jeu normal")
+    ui["normal_play_button"] = creer_bouton(normal_frame, "Lire / pause", lambda: lancer_ou_arreter_jeu_normal(board), PRIMARY_BUTTON_BG)
+    ui["normal_step_button"] = creer_bouton(normal_frame, "Avancer d'une génération", lambda: avancer_jeu_normal(board))
+    ui["normal_random_button"] = creer_bouton(normal_frame, "Grille aléatoire", lambda: remplir_initial_aleatoire(board))
+
+    resolution_frame = tk.Frame(controls, bg=UI_BG)
+    ui["resolution_controls_frame"] = resolution_frame
+    creer_titre_section(resolution_frame, "Résolution")
+    tk.Label(resolution_frame, text="Générations", bg=UI_BG, fg=TEXT_COLOR, anchor="w").pack(fill="x", padx=8)
+    entree = tk.Entry(resolution_frame, justify="center")
     entree.insert(0, str(state.k_inverse))
     entree.pack(fill="x", padx=8, pady=(2, 8))
     ui["steps_entry"] = entree
 
-    ui["start_solver_button"] = creer_bouton(panel, "Start solver", lambda: lancer_ou_arreter_solveur(board), PRIMARY_BUTTON_BG)
-    ui["target_button"] = creer_bouton(panel, "Edit target", lambda: afficher_vue(board, "edition"))
-    ui["initial_button"] = creer_bouton(panel, "Best initial", lambda: afficher_vue(board, "initial"))
-    ui["result_button"] = creer_bouton(panel, "Show result", lambda: afficher_vue(board, "resultat"))
-    ui["evolution_button"] = creer_bouton(panel, "Play evolution", lambda: lancer_ou_arreter_evolution(board))
-    ui["previous_button"] = creer_bouton(panel, "Previous step", lambda: deplacer_evolution(board, -1))
-    ui["next_button"] = creer_bouton(panel, "Next step", lambda: deplacer_evolution(board, 1))
-    ui["population_button"] = creer_bouton(panel, "Voir population", lambda: ouvrir_fenetre_population(board))
+    ui["start_solver_button"] = creer_bouton(resolution_frame, "Lancer le solveur", lambda: lancer_ou_arreter_solveur(board), PRIMARY_BUTTON_BG)
+    ui["target_button"] = creer_bouton(resolution_frame, "Modifier la cible", lambda: afficher_vue(board, "edition"))
+    ui["initial_button"] = creer_bouton(resolution_frame, "Meilleure grille initiale", lambda: afficher_vue(board, "initial"))
+    ui["result_button"] = creer_bouton(resolution_frame, "Afficher le résultat", lambda: afficher_vue(board, "resultat"))
+    ui["evolution_button"] = creer_bouton(resolution_frame, "Lire l'évolution", lambda: lancer_ou_arreter_evolution(board))
+    ui["previous_button"] = creer_bouton(resolution_frame, "Génération précédente", lambda: deplacer_evolution(board, -1))
+    ui["next_button"] = creer_bouton(resolution_frame, "Génération suivante", lambda: deplacer_evolution(board, 1))
+    ui["population_button"] = creer_bouton(resolution_frame, "Voir population", lambda: ouvrir_fenetre_population(board))
 
     ui["progress"] = ttk.Progressbar(
-        panel,
+        resolution_frame,
         maximum=state.config_recherche.nb_generations_max,
         mode="determinate",
     )
     ui["progress"].pack(fill="x", padx=8, pady=(8, 2))
-    ui["progress_label"] = tk.Label(panel, text="Progression en attente.", bg=UI_BG, fg=DISCREET_TEXT, anchor="w")
+    ui["progress_label"] = tk.Label(resolution_frame, text="Progression en attente.", bg=UI_BG, fg=DISCREET_TEXT, anchor="w")
     ui["progress_label"].pack(fill="x", padx=8)
 
-    creer_titre_section(panel, "Reset")
-    creer_bouton(panel, "Clear", lambda: tout_effacer_depuis_interface(board), DANGER_BUTTON_BG)
+    creer_titre_section(panel, "Réinitialisation")
+    creer_bouton(panel, "Effacer", lambda: tout_effacer_depuis_interface(board), DANGER_BUTTON_BG)
 
     ui["status_label"] = tk.Label(
         panel,
-        text="Dessinez une cible, choisissez Steps, puis lancez le solveur.",
+        text="Dessinez une cible, choisissez le nombre de générations, puis lancez le solveur.",
         bg=UI_BG,
         fg=DISCREET_TEXT,
         justify="left",
@@ -218,6 +290,7 @@ def creer_interface(board):
     )
     ui["status_label"].pack(fill="x", padx=8, pady=(12, 0))
 
+    creer_panneau_infos(root)
     actualiser_interface()
     root.after(50, lambda: fixer_taille_fenetre(root))
 
@@ -294,9 +367,12 @@ def actualiser_interface():
     resultat_disponible = state.resultat is not None
     resolution = state.mode_app == "resolution"
 
+    definir_frame_visible(ui.get("resolution_controls_frame"), resolution)
+    definir_frame_visible(ui.get("normal_controls_frame"), not resolution)
+
     if ui["start_solver_button"] is not None and ui["start_solver_button"].winfo_exists():
         ui["start_solver_button"].configure(
-            text="Stop solver" if state.solveur_actif else "Start solver",
+            text="Arrêter le solveur" if state.solveur_actif else "Lancer le solveur",
             state=tk.NORMAL if resolution else tk.DISABLED,
         )
 
@@ -324,7 +400,7 @@ def actualiser_interface():
         ui["population_button"].configure(state=tk.NORMAL if resolution and solver_disponible else tk.DISABLED)
 
     if ui["evolution_button"] is not None and ui["evolution_button"].winfo_exists():
-        ui["evolution_button"].configure(text="Stop evolution" if state.evolution_active else "Play evolution")
+        ui["evolution_button"].configure(text="Arrêter l'évolution" if state.evolution_active else "Lire l'évolution")
 
     progress = ui.get("progress")
     progress_label = ui.get("progress_label")
@@ -335,7 +411,7 @@ def actualiser_interface():
         if state.solveur is not None:
             s = state.solveur
             progress_label.configure(
-                text="Gen {} / {} | erreur {} | exactitude {:.2f}%".format(
+                text="Génération {} / {} | erreur {} | exactitude {:.2f}%".format(
                     s.generation,
                     s.config.nb_generations_max,
                     "?" if s.meilleure_erreur is None else f"{s.meilleure_erreur:.2f}",
@@ -349,16 +425,14 @@ def actualiser_interface():
     if status is not None and status.winfo_exists():
         status.configure(text=texte_status())
 
-    rafraichir_fenetre_population()
-
 
 def texte_status():
     if state.mode_app == "normal":
-        return "Mode jeu normal : dessinez une grille initiale, puis lancez ou avancez l'evolution."
+        return "Mode jeu normal : dessinez une grille initiale, puis lancez ou avancez l'évolution."
 
     if state.solveur_actif and state.solveur is not None:
         s = state.solveur
-        return "Recherche active. Stagnation {} | cache {} | zone {}.".format(
+        return "Recherche active. Stagnation {} | mémoire cache {} | zone {}.".format(
             s.stagnation,
             len(s.cache),
             s.zone,
@@ -368,9 +442,9 @@ def texte_status():
         return state.recommendation_steps
 
     if state.resultat is not None:
-        return "Meilleure grille initiale disponible. Inspectez le resultat ou l'evolution."
+        return "Meilleure grille initiale disponible. Inspectez le résultat ou l'évolution."
 
-    return "Mode resolution : dessinez la cible finale, choisissez Steps, puis lancez le solveur."
+    return "Mode résolution : dessinez la cible finale, choisissez les générations, puis lancez le solveur."
 
 
 def lire_nb_etapes_depuis_interface(board):
@@ -382,11 +456,11 @@ def lire_nb_etapes_depuis_interface(board):
     try:
         valeur = int(texte)
     except ValueError:
-        board.console("Nombre d'etapes invalide :", texte)
+        board.console("Nombre d'étapes invalide :", texte)
         valeur = state.k_inverse
 
     if valeur < 1:
-        board.console("Le nombre d'etapes doit etre au moins 1.")
+        board.console("Le nombre d'étapes doit être au moins 1.")
         valeur = state.k_inverse
 
     state.k_inverse = max(1, valeur)
@@ -484,13 +558,13 @@ def deplacer_evolution(board, delta):
 
 
 def afficher_infos(board):
-    mode = "JEU NORMAL" if state.mode_app == "normal" else "RESOLUTION"
+    mode = "JEU NORMAL" if state.mode_app == "normal" else "RÉSOLUTION"
     afficher_ligne(
         board,
         0,
-        "Mode: {} | View: {} | Steps: {} | target cells: {}".format(
+        "Mode : {} | Vue : {} | générations : {} | cellules cible : {}".format(
             mode,
-            state.vue.upper(),
+            libelle_vue(state.vue).upper(),
             state.k_inverse,
             nombre_cellules_vivantes(state.cible),
         ),
@@ -498,27 +572,27 @@ def afficher_infos(board):
     )
 
     if state.mode_app == "normal":
-        afficher_ligne(board, 1, "Normal: left click toggles cells. Use Lire/pause or Step +1.")
-        afficher_ligne(board, 2, "Keys: Space play/pause | N next | R random | X clear | M mode")
-        afficher_ligne(board, 3, "Life generation: {} | live cells: {}".format(state.generation_life, nombre_cellules_vivantes(state.grille)), IMPORTANT_TEXT)
+        afficher_ligne(board, 1, "Jeu normal : clic gauche pour inverser une cellule. Utilisez Lire/pause ou Avancer.")
+        afficher_ligne(board, 2, "Touches : Espace lecture/pause | N avancer | R aléatoire | X effacer | M mode")
+        afficher_ligne(board, 3, "Génération du jeu : {} | cellules vivantes : {}".format(state.generation_life, nombre_cellules_vivantes(state.grille)), IMPORTANT_TEXT)
     else:
         if state.vue == "evolution" and state.evolution is not None:
-            ligne_1 = "Evolution step {} / {}: blue=current, purple=target match, orange=missing target.".format(
+            ligne_1 = "Étape d'évolution {} / {} : bleu=courant, violet=cible atteinte, orange=cible manquante.".format(
                 state.evolution_index,
                 len(state.evolution) - 1,
             )
         else:
-            ligne_1 = "Draw the desired finish grid, set Steps, then click Start solver."
+            ligne_1 = "Dessinez la grille finale souhaitée, réglez les générations, puis lancez le solveur."
         afficher_ligne(board, 1, ligne_1)
-        afficher_ligne(board, 2, "Keys: S solve | V result/initial | T target | P population | X clear | arrows steps")
+        afficher_ligne(board, 2, "Touches : S résoudre | V résultat/initiale | T cible | P population | X effacer | flèches générations")
 
         if state.solveur is not None:
             s = state.solveur
             afficher_ligne(
                 board,
                 3,
-                "{} | gen {} | error {} | accuracy {:.2f}% | stagnation {}".format(
-                    "Searching" if state.solveur_actif else "Stopped",
+                "{} | génération {} | erreur {} | exactitude {:.2f}% | stagnation {}".format(
+                    "Recherche en cours" if state.solveur_actif else "Recherche arrêtée",
                     s.generation,
                     "?" if s.meilleure_erreur is None else f"{s.meilleure_erreur:.2f}",
                     s.meilleur_score,
@@ -527,9 +601,19 @@ def afficher_infos(board):
                 IMPORTANT_TEXT,
             )
         else:
-            afficher_ligne(board, 3, "Initial live cells: {} | desired finish cells: {}".format(nombre_cellules_vivantes(state.grille), nombre_cellules_vivantes(state.cible)))
+            afficher_ligne(board, 3, "Cellules initiales vivantes : {} | cellules finales souhaitées : {}".format(nombre_cellules_vivantes(state.grille), nombre_cellules_vivantes(state.cible)))
 
     actualiser_interface()
+
+
+def libelle_vue(vue):
+    return {
+        "normal": "jeu",
+        "edition": "édition",
+        "initial": "initiale",
+        "resultat": "résultat",
+        "evolution": "évolution",
+    }.get(vue, vue)
 
 
 def boucle_animation_normale(board):
@@ -591,7 +675,7 @@ def construire_recommandation_steps():
     if state.solveur is None or state.resultat is None:
         return ""
     if state.solveur.meilleure_erreur == 0:
-        return "Solution exacte trouvee pour {} steps.".format(state.k_inverse)
+        return "Solution exacte trouvée pour {} générations.".format(state.k_inverse)
 
     manquantes, en_trop = compter_differences(state.resultat, state.cible, state.config_recherche)
     cible_vivante = max(1, nombre_cellules_vivantes(state.cible))
@@ -599,12 +683,12 @@ def construire_recommandation_steps():
     plus = state.k_inverse + 1
 
     if manquantes >= cible_vivante / 2:
-        return "Resultat imparfait : beaucoup de cellules cible manquent. Recommendation : essayer {} steps ou simplifier la cible.".format(moins)
+        return "Résultat imparfait : beaucoup de cellules cible manquent. Recommandation : essayer {} générations ou simplifier la cible.".format(moins)
     if en_trop > manquantes * 2 and state.solveur.meilleur_score >= 92:
-        return "Resultat proche mais bruite. Recommendation : reessayer {} steps, puis tester {} steps si le bruit persiste.".format(state.k_inverse, plus)
+        return "Résultat proche mais bruité. Recommandation : réessayer {} générations, puis tester {} générations si le bruit persiste.".format(state.k_inverse, plus)
     if state.solveur.stagnation >= 35:
-        return "Forte stagnation. Recommendation : essayer {} steps ou redessiner une cible plus compacte.".format(moins)
-    return "Resultat imparfait. Recommendation : relancer avec la meme valeur, puis comparer avec {} steps.".format(plus)
+        return "Forte stagnation. Recommandation : essayer {} générations ou redessiner une cible plus compacte.".format(moins)
+    return "Résultat imparfait. Recommandation : relancer avec la même valeur, puis comparer avec {} générations.".format(plus)
 
 
 def lancer_ou_arreter_solveur(board):
@@ -785,16 +869,16 @@ def ouvrir_fenetre_population(board):
         return
 
     fenetre = tk.Toplevel(root)
-    fenetre.title("Population genetique - individus testes")
+    fenetre.title("Population génétique - échantillon pédagogique")
     fenetre.configure(bg=UI_BG)
-    fenetre.geometry("980x720")
-    fenetre.minsize(780, 520)
+    fenetre.geometry("1080x760")
+    fenetre.minsize(900, 560)
     ui["population_window"] = fenetre
     ui["population_step"] = 0
 
     tk.Label(
         fenetre,
-        text="Population courante et meilleurs de la generation precedente",
+        text="Échantillon de la population génétique",
         bg=UI_BG,
         fg=TEXT_COLOR,
         font=("TkDefaultFont", 13, "bold"),
@@ -819,11 +903,18 @@ def ouvrir_fenetre_population(board):
 
 def fermer_fenetre_population():
     fenetre = ui.get("population_window")
+    after_id = ui.get("population_after_id")
+    if fenetre is not None and fenetre.winfo_exists() and after_id is not None:
+        try:
+            fenetre.after_cancel(after_id)
+        except tk.TclError:
+            pass
     if fenetre is not None and fenetre.winfo_exists():
         fenetre.destroy()
     ui["population_window"] = None
     ui["population_canvas"] = None
     ui["population_frame"] = None
+    ui["population_after_id"] = None
 
 
 def animer_fenetre_population():
@@ -847,7 +938,85 @@ def rafraichir_fenetre_population():
         enfant.destroy()
 
     snapshot = state.solveur.dernier_snapshot
-    titre = "Generation {} | step anime {} / {} | mutation {:.3f} | injection {:.2f} | cache {}".format(
+    for colonne in range(3):
+        frame.columnconfigure(colonne, weight=1)
+
+    groupes = selectionner_echantillon_population(snapshot)
+    ligne = dessiner_resume_population(frame, snapshot, 0)
+    ligne = dessiner_cycle_genetique(frame, ligne)
+    ligne = dessiner_section_population(frame, "Meilleur global et élites sélectionnées", groupes["elites"], ligne)
+    ligne = dessiner_section_population(frame, "Mémoire courte de la génération précédente", groupes["precedents"], ligne)
+    dessiner_section_population(frame, "Échantillon testé puis transformé", groupes["echantillon"], ligne)
+
+
+def cle_evaluation(evaluation):
+    return tuple(cellule for ligne in evaluation.individu for cellule in ligne)
+
+
+def ajouter_unique(destination, evaluation, vus):
+    if evaluation is None:
+        return
+    cle = cle_evaluation(evaluation)
+    if cle in vus:
+        return
+    vus.add(cle)
+    destination.append(evaluation)
+
+
+def selectionner_echantillon_population(snapshot):
+    vus = set()
+    elites = []
+    precedents = []
+    echantillon = []
+
+    ajouter_unique(elites, snapshot.meilleur_global, vus)
+    for evaluation in snapshot.population_evaluee:
+        if evaluation.role == "elite":
+            ajouter_unique(elites, evaluation, vus)
+        if len(elites) >= 5:
+            break
+
+    for evaluation in snapshot.meilleurs_precedents:
+        ajouter_unique(precedents, evaluation, vus)
+        if len(precedents) >= 3:
+            break
+
+    roles_prioritaires = (
+        ("enfant", 3),
+        ("injection", 2),
+        ("elite conservee", 1),
+        ("amelioration locale", 1),
+        ("aléatoire", 1),
+        ("aleatoire", 1),
+        ("cible", 1),
+        ("dessin", 1),
+    )
+    for fragment_role, limite in roles_prioritaires:
+        ajoutes = 0
+        for evaluation in snapshot.population_evaluee:
+            if fragment_role in evaluation.role.lower():
+                avant = len(echantillon)
+                ajouter_unique(echantillon, evaluation, vus)
+                ajoutes += len(echantillon) - avant
+                if ajoutes >= limite or len(echantillon) >= 7:
+                    break
+        if len(echantillon) >= 7:
+            break
+
+    for evaluation in snapshot.population_evaluee:
+        ajouter_unique(echantillon, evaluation, vus)
+        if len(echantillon) >= 7:
+            break
+
+    return {
+        "elites": elites[:5],
+        "precedents": precedents[:3],
+        "echantillon": echantillon[:7],
+    }
+
+
+def dessiner_resume_population(parent, snapshot, ligne):
+    texte = "Génération {} | étape animée {} / {} | mutation {:.3f} | injection {:.2f} | mémoire cache {} | affichage limité à un échantillon".format(
         snapshot.generation,
         ui["population_step"],
         state.k_inverse,
@@ -855,25 +1024,62 @@ def rafraichir_fenetre_population():
         snapshot.taux_injection,
         snapshot.taille_cache,
     )
-    tk.Label(frame, text=titre, bg=UI_BG, fg=IMPORTANT_TEXT, anchor="w").grid(row=0, column=0, columnspan=4, sticky="ew", padx=6, pady=(4, 8))
-
-    ligne = 1
-    if snapshot.meilleurs_precedents:
-        tk.Label(frame, text="Meilleurs de la generation precedente", bg=UI_BG, fg="#64748b", font=("TkDefaultFont", 9, "bold"), anchor="w").grid(row=ligne, column=0, columnspan=4, sticky="ew", padx=6)
-        ligne += 1
-        ligne = dessiner_cartes(frame, snapshot.meilleurs_precedents[:8], ligne, colonnes=4)
-
-    tk.Label(frame, text="Tous les individus evalues maintenant", bg=UI_BG, fg="#64748b", font=("TkDefaultFont", 9, "bold"), anchor="w").grid(row=ligne, column=0, columnspan=4, sticky="ew", padx=6, pady=(10, 0))
-    ligne += 1
-    dessiner_cartes(frame, snapshot.population_evaluee, ligne, colonnes=4)
+    tk.Label(parent, text=texte, bg=UI_BG, fg=IMPORTANT_TEXT, anchor="w").grid(
+        row=ligne,
+        column=0,
+        columnspan=3,
+        sticky="ew",
+        padx=6,
+        pady=(4, 8),
+    )
+    return ligne + 1
 
 
-def dessiner_cartes(parent, evaluations, ligne_depart, colonnes=4):
+def dessiner_cycle_genetique(parent, ligne):
+    cycle = tk.Frame(parent, bg="#e2e8f0", bd=0)
+    cycle.grid(row=ligne, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 10))
+    etapes = [
+        ("1. Tester", "#dbeafe"),
+        ("2. Sélectionner les élites", "#dcfce7"),
+        ("3. Croiser + muter", "#fef3c7"),
+        ("4. Nouvelle génération", "#ede9fe"),
+    ]
+    for colonne, (texte, couleur) in enumerate(etapes):
+        cycle.columnconfigure(colonne, weight=1)
+        tk.Label(
+            cycle,
+            text=texte,
+            bg=couleur,
+            fg=TEXT_COLOR,
+            font=("TkDefaultFont", 9, "bold"),
+            padx=10,
+            pady=8,
+        ).grid(row=0, column=colonne, sticky="ew", padx=1, pady=1)
+    return ligne + 1
+
+
+def dessiner_section_population(parent, titre, evaluations, ligne_depart, colonnes=3):
+    if not evaluations:
+        return ligne_depart
+
+    tk.Label(
+        parent,
+        text=titre,
+        bg=UI_BG,
+        fg="#64748b",
+        font=("TkDefaultFont", 9, "bold"),
+        anchor="w",
+    ).grid(row=ligne_depart, column=0, columnspan=colonnes, sticky="ew", padx=6, pady=(10, 0))
+
+    return dessiner_cartes(parent, evaluations, ligne_depart + 1, colonnes)
+
+
+def dessiner_cartes(parent, evaluations, ligne_depart, colonnes=3):
     ligne = ligne_depart
     colonne = 0
     for evaluation in evaluations:
         carte = tk.Frame(parent, bg="white", bd=1, relief=tk.SOLID)
-        carte.grid(row=ligne, column=colonne, sticky="n", padx=6, pady=6)
+        carte.grid(row=ligne, column=colonne, sticky="nsew", padx=6, pady=6)
         dessiner_carte_individu(carte, evaluation)
         colonne += 1
         if colonne >= colonnes:
@@ -883,27 +1089,106 @@ def dessiner_cartes(parent, evaluations, ligne_depart, colonnes=4):
 
 
 def dessiner_carte_individu(parent, evaluation):
-    header = "#{} | {} | err {:.2f} | {:.1f}% | {} cells".format(
+    header = "#{} | {} | erreur {:.2f} | {:.1f}% | {} cellules".format(
         evaluation.rang,
-        evaluation.role,
+        libelle_role(evaluation.role),
         evaluation.erreur,
         evaluation.exactitude,
         nombre_cellules_vivantes(evaluation.individu),
     )
-    tk.Label(parent, text=header, bg="white", fg=TEXT_COLOR, font=("TkDefaultFont", 8), anchor="w").pack(fill="x", padx=5, pady=(4, 2))
+    tk.Label(parent, text=header, bg="white", fg=TEXT_COLOR, font=("TkDefaultFont", 8, "bold"), anchor="w").pack(fill="x", padx=6, pady=(5, 1))
+    tk.Label(parent, text=description_role(evaluation.role), bg="white", fg=DISCREET_TEXT, font=("TkDefaultFont", 8), anchor="w").pack(fill="x", padx=6)
 
-    grille = evaluation.individu
+    grille_animee = evaluation.individu
     if ui["population_step"] > 0:
-        grille = historique_evolution(evaluation.individu, min(ui["population_step"], state.k_inverse), state.config_recherche.bords_toriques)[-1]
+        grille_animee = historique_evolution(
+            evaluation.individu,
+            min(ui["population_step"], state.k_inverse),
+            state.config_recherche.bords_toriques,
+        )[-1]
 
-    cell = 4
-    canvas = tk.Canvas(parent, width=COLS * cell, height=ROWS * cell, bg="#f8fafc", highlightthickness=0)
-    canvas.pack(padx=5, pady=(0, 5))
+    ligne_grilles = tk.Frame(parent, bg="white")
+    ligne_grilles.pack(padx=6, pady=(5, 6))
+    dessiner_mini_grille(ligne_grilles, "G0", evaluation.individu, "initial", evaluation, 0)
+    dessiner_mini_grille(ligne_grilles, "G{}".format(ui["population_step"]), grille_animee, "anime", evaluation, 1)
+    dessiner_mini_grille(ligne_grilles, "Résultat", evaluation.resultat, "resultat", evaluation, 2)
+
+
+def libelle_role(role):
+    return {
+        "elite": "élite",
+        "elite conservee": "élite conservée",
+        "meilleur precedent": "meilleur précédent",
+        "meilleur global": "meilleur global",
+        "dessin actuel": "dessin actuel",
+        "cible naive": "cible naïve",
+        "cible bruitee": "cible bruitée",
+        "aléatoire guidé": "aléatoire guidé",
+        "aleatoire guide": "aléatoire guidé",
+        "remplacement doublon": "remplacement de doublon",
+        "remplacement de doublon": "remplacement de doublon",
+        "amelioration locale": "amélioration locale",
+        "injection": "injection",
+        "enfant": "enfant",
+        "candidat": "candidat",
+    }.get(role, role)
+
+
+def description_role(role):
+    role_min = role.lower()
+    if "meilleur global" in role_min:
+        return "meilleur individu trouvé depuis le lancement"
+    if "elite" in role_min:
+        return "sélectionné pour survivre à la génération"
+    if "enfant" in role_min:
+        return "issu d'un croisement puis muté"
+    if "injection" in role_min:
+        return "nouvel individu aléatoire pour relancer la diversité"
+    if "amelioration" in role_min:
+        return "petite recherche locale autour du meilleur"
+    if "precedent" in role_min:
+        return "référence de la génération précédente"
+    return "candidat évalué contre la cible"
+
+
+def dessiner_mini_grille(parent, titre, grille, mode, evaluation, colonne):
+    cell = 3
+    bloc = tk.Frame(parent, bg="white")
+    bloc.grid(row=0, column=colonne, padx=3, sticky="n")
+    tk.Label(bloc, text=titre, bg="white", fg=DISCREET_TEXT, font=("TkDefaultFont", 8)).pack()
+
+    canvas = tk.Canvas(bloc, width=COLS * cell, height=ROWS * cell, bg="#f8fafc", highlightthickness=1, highlightbackground="#e2e8f0")
+    canvas.pack()
     for i in range(ROWS):
         for j in range(COLS):
-            if grille[i][j] == 1:
-                couleur = LIVE_COLOR if evaluation.resultat[i][j] == 0 else RESULT_OK
+            couleur = couleur_mini_grille(grille, mode, evaluation, i, j)
+            if couleur:
                 canvas.create_rectangle(j * cell, i * cell, (j + 1) * cell, (i + 1) * cell, fill=couleur, outline="")
+
+
+def couleur_mini_grille(grille, mode, evaluation, i, j):
+    if mode == "initial":
+        return LIVE_COLOR if grille[i][j] == 1 else ""
+
+    cible = state.cible[i][j]
+    vivant = grille[i][j]
+    if mode == "anime":
+        if vivant == 1 and cible == 1:
+            return INITIAL_AND_TARGET
+        if vivant == 1:
+            return LIVE_COLOR
+        if cible == 1:
+            return "#fde68a"
+        return ""
+
+    resultat = evaluation.resultat[i][j]
+    if resultat == 1 and cible == 1:
+        return RESULT_OK
+    if resultat == 1 and cible == 0:
+        return RESULT_EXTRA
+    if resultat == 0 and cible == 1:
+        return RESULT_MISSING
+    return ""
 
 
 def initialiser(board):
@@ -913,8 +1198,8 @@ def initialiser(board):
     creer_interface(board)
     rafraichir_plateau(board)
     afficher_infos(board)
-    board.console("Life Pattern Hunter pret.")
-    board.console("Mode resolution : dessinez une cible, choisissez Steps, puis lancez le solveur.")
+    board.console("Chasseur de motifs du jeu de la vie prêt.")
+    board.console("Mode résolution : dessinez une cible, choisissez les générations, puis lancez le solveur.")
 
 
 def run_app(eniseboard):
@@ -923,11 +1208,11 @@ def run_app(eniseboard):
         vsize=ROWS,
         cell=CELL_SIZE,
         grid=True,
-        title="Life Pattern Hunter",
+        title="Chasseur de motifs du jeu de la vie",
         bgcolor=BG_COLOR,
-        info=True,
+        info=False,
         infoPlace="down",
-        infoLines=4,
+        infoLines=0,
         console=True,
         consolePlace="down",
         init=initialiser,
