@@ -3,9 +3,15 @@ import argparse
 import random
 from dataclasses import dataclass
 
+from life_rules import (
+    COLS,
+    ROWS,
+    copier_grille,
+    nombre_cellules_vivantes,
+    nouvelle_grille,
+    simuler,
+)
 
-ROWS = 24
-COLS = 24
 MARGE_RECHERCHE = 4
 MAX_MARGE_RECHERCHE = 10
 
@@ -39,50 +45,6 @@ class RunResult:
     iterations: int
     candidats_testes: int
     solution_exacte: bool
-
-
-def nouvelle_grille(valeur=0):
-    return [[valeur for _ in range(COLS)] for _ in range(ROWS)]
-
-
-def copier_grille(grille):
-    return [ligne[:] for ligne in grille]
-
-
-def nombre_cellules_vivantes(grille):
-    return sum(sum(ligne) for ligne in grille)
-
-
-def compter_voisins(grille, ligne, col):
-    total = 0
-    for dl in (-1, 0, 1):
-        for dc in (-1, 0, 1):
-            if dl == 0 and dc == 0:
-                continue
-            nl = ligne + dl
-            nc = col + dc
-            if 0 <= nl < ROWS and 0 <= nc < COLS:
-                total += grille[nl][nc]
-    return total
-
-
-def generation_suivante(grille):
-    suivante = nouvelle_grille(0)
-    for i in range(ROWS):
-        for j in range(COLS):
-            voisins = compter_voisins(grille, i, j)
-            if grille[i][j] == 1 and voisins in (2, 3):
-                suivante[i][j] = 1
-            elif grille[i][j] == 0 and voisins == 3:
-                suivante[i][j] = 1
-    return suivante
-
-
-def simuler(grille_initiale, nb_generations):
-    grille = copier_grille(grille_initiale)
-    for _ in range(nb_generations):
-        grille = generation_suivante(grille)
-    return grille
 
 
 def construire_cible(nom):
