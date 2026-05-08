@@ -245,50 +245,352 @@ Cette recommandation n'est pas une preuve mathématique. C'est une aide de lectu
 
 ## Complexite
 
-On note :
+### Notations
 
-- `N` : nombre de cellules, ici `576` ;
-- `A` : nombre de cellules dans la zone active de recherche ;
-- `X` : nombre de générations du jeu de la vie à simuler ;
-- `P` : taille de population ;
-- `L` : essais d'amelioration locale ;
-- `G` : nombre maximal de générations génétiques ;
-- `C` : taille maximale du cache.
-- `Q` : nombre de graines locales testees au lancement, borne par les paramètres.
+On separe les constantes du programme et les paramètres qui peuvent varier :
 
-Une simulation coute :
+- `R` : nombre de lignes du plateau ;
+- `S` : nombre de colonnes du plateau ;
+- `N = R * S` : nombre total de cellules. Dans l'application, `N = 24 * 24 = 576` ;
+- `T` : nombre de cellules vivantes dans la cible ;
+- `A` : nombre de cellules dans la zone de recherche. On a toujours `A <= N` ;
+- `X` : nombre de generations du jeu de la vie simulees pour evaluer un candidat ;
+- `P` : taille de la population genetique ;
+- `E` : nombre d'elites conservees ;
+- `L` : nombre d'essais d'amelioration locale ;
+- `G` : nombre maximal de generations genetiques ;
+- `C` : taille maximale du cache d'evaluations ;
+- `B` : nombre de cases dans la petite boite des graines locales ;
+- `M` : nombre maximal de cellules vivantes dans une graine locale ;
+- `Q` : nombre de combinaisons de graines locales testees.
+
+Dans la configuration actuelle :
+
+```text
+P = 120
+E = 14
+L = 18
+G = 420
+C = 8000
+B <= 18
+M <= 5
+X <= 8 pour activer les graines locales
+```
+
+Le solveur travaille donc sur un plateau fixe dans l'interface, mais l'analyse ci-dessous garde `N`, `P`, `G` et `X` variables pour montrer le comportement general de l'algorithme.
+
+### Cout des briques de base
+
+Une generation du jeu de la vie parcourt les `N` cellules. Pour chaque cellule, `compter_voisins` teste au plus 8 voisines, donc un nombre constant d'operations. Le cout d'une generation est donc :
+
+```text
+O(8 * N) = O(N)
+```
+
+Simuler un candidat pendant `X` generations coute :
 
 ```text
 O(X * N)
 ```
 
-Une génération génétique évalue environ `P + L` candidats :
+L'evaluation complete d'un individu ne contient pas seulement cette simulation. Elle fait aussi :
+
+- `cle_grille` pour produire la cle du cache : `O(N)` ;
+- `simuler` si l'individu n'est pas deja dans le cache : `O(X * N)` ;
+- `erreur_par_rapport_a_cible` : `O(N)` ;
+- `score_exactitude` : `O(N)` ;
+- `nombre_cellules_vivantes` : `O(N)` ;
+- des copies de grilles pour stocker l'evaluation : `O(N)`.
+
+Le cout d'une evaluation non trouvee dans le cache est donc :
+
+```text
+O(N + X * N + N + N + N + N) = O((X + 1) * N)
+```
+
+Comme `X >= 1` dans les usages normaux du solveur, on peut simplifier en :
+
+```text
+O(X * N)
+```
+
+Une evaluation trouvee dans le cache evite la simulation et le recalcul de l'erreur, mais elle doit quand meme construire la cle et copier les grilles retournees. Son cout est donc :
+
+```text
+O(N)
+```
+
+Le cache ameliore donc le temps reel quand beaucoup d'individus reapparaissent, mais il ne change pas le pire cas : dans le pire cas, chaque candidat est nouveau et doit etre simule.
+
+### Initialisation du solveur
+
+`calculer_zone_recherche` parcourt la cible pour trouver les cellules vivantes :
+
+```text
+O(N)
+```
+
+`construire_carte_distance_cible` parcourt les `N` cellules du plateau et, pour chacune, cherche la plus proche des `T` cellules vivantes de la cible :
+
+```text
+O(N * T)
+```
+
+Comme `T <= N`, le pire cas theorique est :
+
+```text
+O(N^2)
+```
+
+En pratique, beaucoup de cibles ont peu de cellules vivantes, donc ce cout est souvent plus proche de `O(N * T)` avec `T` petit.
+
+`creer_population_initiale` construit jusqu'a `P` grilles. Certaines operations copient une grille complete (`O(N)`), d'autres generent seulement la zone active (`O(A)`), mais chaque individu est stocke comme une grille de taille `N`. Le cout total est donc borne par :
+
+```text
+O(P * N)
+```
+
+### Graines locales
+
+Les graines locales ne sont creees que si la cible est clairsemee et si `X` reste petit. La petite boite contient `B` cases, et le programme teste toutes les combinaisons de taille `1` a `M`. Le nombre de graines candidates testees est :
+
+```text
+Q = somme_{k=1..M} C(B, k)
+```
+
+Avec les bornes du programme :
+
+```text
+B <= 18
+M <= 5
+Q <= C(18,1) + C(18,2) + C(18,3) + C(18,4) + C(18,5)
+Q <= 18 + 153 + 816 + 3060 + 8568
+Q <= 12615
+```
+
+Chaque graine est simulee avec `simuler_cellules_vivantes`, qui ne parcourt pas tout le plateau. Elle parcourt les cellules vivantes et leurs voisines. Si `K_t` est le nombre de cellules vivantes a l'etape `t`, une simulation coute :
+
+```text
+O(somme_{t=0..X-1} K_t)
+```
+
+car chaque cellule vivante produit au plus 8 voisins a compter. Si on note `K = max(K_t)` pendant cette simulation, on obtient la borne simple :
+
+```text
+O(X * K)
+```
+
+La comparaison sparse avec la cible coute `O(T + K)`. Le cout total des graines locales est donc :
+
+```text
+O(Q * (X * K + T + K) + Q log Q)
+```
+
+Le terme `Q log Q` vient du tri des graines candidates avant de garder les meilleures. Comme `B`, `M`, `Q` et `X` sont strictement plafonnes par la configuration pour cette phase, ce cout est borne en pratique. Il reste neanmoins important de l'ecrire : les graines locales sont une enumeration combinatoire controlee, pas une operation constante en theorie si on retirait ces plafonds.
+
+### Une generation genetique
+
+Une generation de `avancer_solveur_une_generation` contient plusieurs etapes.
+
+1. Evaluation de la population :
+
+```text
+P evaluations * O(X * N) = O(P * X * N)
+```
+
+2. Tri de la population evaluee :
+
+```text
+O(P log P)
+```
+
+3. Amelioration locale du meilleur individu :
+
+Le meilleur candidat est evalue, puis `L` voisins obtenus par inversion d'une cellule sont testes. Dans le pire cas, aucun n'est dans le cache :
+
+```text
+O((L + 1) * X * N)
+```
+
+4. Nouveau tri apres l'amelioration locale :
+
+Le code insere le candidat local puis retrie si necessaire une liste de taille environ `P + 1` :
+
+```text
+O(P log P)
+```
+
+5. Creation des instantanes pedagogiques :
+
+Le snapshot copie jusqu'a `P` evaluations, et chaque evaluation contient une grille initiale et une grille resultat. Le cout est donc :
+
+```text
+O(P * N)
+```
+
+6. Conservation des elites :
+
+Copier `E` grilles coute :
+
+```text
+O(E * N)
+```
+
+Comme `E <= P`, cette etape est incluse dans `O(P * N)`.
+
+7. Injections aleatoires et relances locales :
+
+Chaque nouvel individu aleatoire parcourt la zone active `A`, puis stocke une grille de taille `N`. Les relances locales copient des grilles completes et peuvent muter `A` cases. Pour au plus `P` individus :
+
+```text
+O(P * (N + A))
+```
+
+Comme `A <= N`, cela devient :
+
+```text
+O(P * N)
+```
+
+8. Selection, croisement et mutation des enfants :
+
+La selection par tournoi tire au plus 5 candidats, donc elle coute `O(1)` par parent. Le croisement cree une grille puis remplit la zone active, et la mutation parcourt aussi la zone active :
+
+```text
+O(N + A) par enfant
+```
+
+Pour au plus `P` enfants :
+
+```text
+O(P * (N + A)) = O(P * N)
+```
+
+9. Suppression des doublons :
+
+Pour chaque individu, `cle_grille` parcourt `N` cellules. Si des remplacements aleatoires sont necessaires, ils sont aussi bornes par la taille de population. Le cout est donc :
+
+```text
+O(P * N)
+```
+
+En additionnant les etapes d'une generation genetique :
+
+```text
+O(P * X * N)
++ O(P log P)
++ O((L + 1) * X * N)
++ O(P log P)
++ O(P * N)
++ O(P * N)
++ O(P * N)
++ O(P * N)
+```
+
+Ce qui donne :
+
+```text
+O((P + L) * X * N + P log P + P * N)
+```
+
+Comme `X >= 1`, le terme `P * N` est absorbe par `P * X * N`, donc la borne usuelle devient :
+
+```text
+O((P + L) * X * N + P log P)
+```
+
+Si `P log P` est negligeable devant les simulations, ce qui est le cas avec un plateau de 576 cellules et des simulations sur plusieurs generations, on peut retenir le terme dominant :
 
 ```text
 O((P + L) * X * N)
 ```
 
-Sur toute la recherche :
+Cette simplification est correcte seulement apres avoir verifie les autres couts : elle n'ignore pas le tri, les copies et le dedoublonnage, elle constate simplement qu'ils sont domines par les simulations dans le regime normal du programme.
+
+### Recherche complete
+
+La recherche effectue au plus `G` generations genetiques. Le cout total hors initialisation est donc :
 
 ```text
-O(G * (P + L) * X * N)
+O(G * ((P + L) * X * N + P log P))
 ```
 
-La phase de graines locales ajoute au lancement :
+En ajoutant l'initialisation et les graines locales :
 
 ```text
-O(Q * X * K)
+O(
+  N
+  + N * T
+  + P * N
+  + Q * (X * K + T + K)
+  + Q log Q
+  + G * ((P + L) * X * N + P log P)
+)
 ```
 
-`K` est le nombre de cellules actives pendant la simulation d'une mini-graine. En pratique `Q` est borne par une boite locale de 18 cases au maximum et les graines commencent avec au plus 5 cellules vivantes, donc cette phase reste petite devant la recherche genetique complete.
-
-La memoire utilisee est approximativement :
+La borne de pire cas en fonction de `N`, en utilisant `T <= N` et `A <= N`, est :
 
 ```text
-O(P * N + C * N + X * N)
+O(
+  N^2
+  + P * N
+  + Q * (X * K + N + K)
+  + Q log Q
+  + G * ((P + L) * X * N + P log P)
+)
 ```
 
-Elle stocke la population, le cache et l'historique d'évolution affiché par l'interface.
+Dans la configuration reelle, `Q` est plafonne, `P`, `L`, `G` et `C` sont fixes par `SearchConfig`, et `N = 576`. Le temps d'execution observe depend donc surtout de :
+
+- `X`, car chaque evaluation simule plus ou moins longtemps ;
+- `G`, car il fixe le nombre maximal de generations genetiques ;
+- le nombre de repetitions dans la population, car le cache peut transformer une evaluation `O(X * N)` en `O(N)`.
+
+### Memoire
+
+La population courante stocke `P` grilles de `N` cellules :
+
+```text
+O(P * N)
+```
+
+Le cache stocke jusqu'a `C` entrees. Chaque entree contient une cle de `N` cellules et une grille resultat de `N` cellules, plus quelques scores scalaires. Le cout est donc :
+
+```text
+O(C * N)
+```
+
+Les instantanes pedagogiques stockent jusqu'a `P` evaluations, chacune avec un individu et son resultat :
+
+```text
+O(P * N)
+```
+
+L'historique d'evolution affiche par l'interface contient `X + 1` grilles :
+
+```text
+O((X + 1) * N) = O(X * N)
+```
+
+La carte de distance et la cible occupent chacune une grille :
+
+```text
+O(N)
+```
+
+La memoire totale est donc :
+
+```text
+O(P * N + C * N + X * N + N)
+```
+
+Ce qui se simplifie en :
+
+```text
+O((P + C + X) * N)
+```
+
+Le terme dominant est generalement le cache, car `C = 8000` peut etre beaucoup plus grand que `P = 120`.
 
 ## Référence de comparaison aléatoire
 
