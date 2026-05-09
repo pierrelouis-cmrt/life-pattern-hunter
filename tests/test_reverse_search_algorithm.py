@@ -11,6 +11,7 @@ from reverse_search_algorithm import (
     erreur_par_rapport_a_cible,
     evaluer_population,
     initialiser_solveur,
+    nettoyer_solution_initiale,
     score_exactitude,
 )
 
@@ -107,6 +108,80 @@ class ReverseSearchAlgorithmTests(unittest.TestCase):
         self.assertEqual("solution exacte", solveur.raison_arret)
         self.assertEqual(0, solveur.meilleure_erreur)
         self.assertEqual(3, nombre_cellules_vivantes(solveur.meilleur_individu))
+
+    def test_cleaner_removes_isolated_noise_when_result_stays_exact(self):
+        config = self.small_config()
+        cible = grille_depuis_cellules([(2, 1), (2, 2), (2, 3)])
+        initiale = grille_depuis_cellules([(1, 2), (2, 2), (3, 2), (4, 4)])
+        carte = construire_carte_distance_cible(cible, config)
+
+        nettoyee = nettoyer_solution_initiale(initiale, cible, 1, config, carte, {})
+
+        self.assertEqual(0, nettoyee.erreur)
+        self.assertEqual(3, nombre_cellules_vivantes(nettoyee.individu))
+        self.assertEqual(cible, nettoyee.resultat)
+
+    def test_cleaner_keeps_useful_cells(self):
+        config = self.small_config()
+        cible = grille_depuis_cellules([(2, 1), (2, 2), (2, 3)])
+        initiale = grille_depuis_cellules([(1, 2), (2, 2), (3, 2)])
+        carte = construire_carte_distance_cible(cible, config)
+
+        nettoyee = nettoyer_solution_initiale(initiale, cible, 1, config, carte, {})
+
+        self.assertEqual(0, nettoyee.erreur)
+        self.assertEqual(3, nombre_cellules_vivantes(nettoyee.individu))
+
+    def test_solver_stores_clean_exact_solution(self):
+        config = self.small_config()
+        cible = grille_depuis_cellules([(2, 1), (2, 2), (2, 3)])
+        initiale = grille_depuis_cellules([(1, 2), (2, 2), (3, 2), (4, 4)])
+        solveur = initialiser_solveur(initiale, cible, 1, config, random.Random(1))
+
+        avancer_solveur_une_generation(solveur)
+
+        self.assertTrue(solveur.termine)
+        self.assertEqual(0, solveur.meilleure_erreur)
+        self.assertEqual(3, nombre_cellules_vivantes(solveur.meilleur_individu))
+
+    def test_local_seeds_still_work_with_large_sparse_blinker_steps(self):
+        config = self.small_config()
+        cible = grille_depuis_cellules([(2, 1), (2, 2), (2, 3)])
+        zone = calculer_zone_recherche(cible, 9, config)
+        carte = construire_carte_distance_cible(cible, config)
+
+        graines = creer_graines_locales_cible(cible, 9, zone, carte, config)
+
+        self.assertTrue(any(simuler(graine, 9) == cible for graine in graines))
+
+    def test_stagnation_restart_keeps_population_size_and_tags_roles(self):
+        config = SearchConfig(
+            rows=6,
+            cols=6,
+            taille_population=24,
+            nb_elites=4,
+            nb_generations_max=10,
+            nb_essais_amelioration_locale=2,
+            taille_cache_max=100,
+            seuil_cible_clairesemee=0,
+            seuil_relance_stagnation=1,
+            intervalle_relance_stagnation=1,
+            fraction_relance_stagnation=0.50,
+        )
+        cible = grille_depuis_cellules([(3, 3)], rows=6, cols=6)
+        vide = nouvelle_grille(0, 6, 6)
+        solveur = initialiser_solveur(vide, cible, 1, config, random.Random(4))
+        solveur.population = [nouvelle_grille(0, 6, 6) for _ in range(config.taille_population)]
+        solveur.roles_population = ["vide force"] * config.taille_population
+        solveur.meilleure_note_tri = -1
+        solveur.meilleure_erreur = 999
+        solveur.meilleur_individu = vide
+        solveur.meilleur_resultat = vide
+
+        avancer_solveur_une_generation(solveur)
+
+        self.assertEqual(config.taille_population, len(solveur.population))
+        self.assertIn("relance stagnation", solveur.roles_population)
 
 
 if __name__ == "__main__":

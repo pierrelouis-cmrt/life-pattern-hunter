@@ -23,6 +23,7 @@ from life_rules import (
 from reverse_search_algorithm import (
     compter_differences,
     avancer_solveur_une_generation,
+    detecter_periode_simple,
     initialiser_solveur,
 )
 
@@ -54,6 +55,7 @@ ui = {
     "resolution_controls_frame": None,
     "mode_var": None,
     "steps_entry": None,
+    "auto_min_steps_entry": None,
     "start_solver_button": None,
     "normal_play_button": None,
     "target_button": None,
@@ -258,6 +260,11 @@ def creer_interface(board):
     entree.pack(fill="x", padx=8, pady=(2, 8))
     ui["steps_entry"] = entree
 
+    tk.Label(resolution_frame, text="Min auto-steps (vide = 1)", bg=UI_BG, fg=TEXT_COLOR, anchor="w").pack(fill="x", padx=8)
+    entree_min = tk.Entry(resolution_frame, justify="center")
+    entree_min.pack(fill="x", padx=8, pady=(2, 8))
+    ui["auto_min_steps_entry"] = entree_min
+
     ui["start_solver_button"] = creer_bouton(resolution_frame, "Lancer le solveur", lambda: lancer_ou_arreter_solveur(board), PRIMARY_BUTTON_BG)
     ui["target_button"] = creer_bouton(resolution_frame, "Modifier la cible", lambda: afficher_vue(board, "edition"))
     ui["initial_button"] = creer_bouton(resolution_frame, "Meilleure grille initiale", lambda: afficher_vue(board, "initial"))
@@ -432,10 +439,18 @@ def texte_status():
 
     if state.solveur_actif and state.solveur is not None:
         s = state.solveur
-        return "Recherche active. Stagnation {} | mémoire cache {} | zone {}.".format(
+        auto = ""
+        if state.auto_steps_actif and state.auto_steps_tentes:
+            auto = " | essais steps {}/{} : {}".format(
+                len(state.auto_steps_tentes),
+                state.auto_steps_max_essais,
+                ", ".join(str(valeur) for valeur in state.auto_steps_tentes),
+            )
+        return "Recherche active. Stagnation {} | mémoire cache {} | zone {}{}.".format(
             s.stagnation,
             len(s.cache),
             s.zone,
+            auto,
         )
 
     if state.recommendation_steps:
@@ -467,6 +482,37 @@ def lire_nb_etapes_depuis_interface(board):
     entree.delete(0, tk.END)
     entree.insert(0, str(state.k_inverse))
     return valeur >= 1
+
+
+def lire_min_auto_steps_depuis_interface(board):
+    entree = ui.get("auto_min_steps_entry")
+    if entree is None or not entree.winfo_exists():
+        state.auto_steps_min = None
+        return True
+
+    texte = entree.get().strip()
+    if not texte:
+        state.auto_steps_min = None
+        return True
+
+    try:
+        valeur = int(texte)
+    except ValueError:
+        board.console("Minimum auto-steps invalide :", texte)
+        state.auto_steps_min = None
+        entree.delete(0, tk.END)
+        return False
+
+    if valeur < 1:
+        board.console("Le minimum auto-steps doit être vide ou supérieur à 0.")
+        state.auto_steps_min = None
+        entree.delete(0, tk.END)
+        return False
+
+    state.auto_steps_min = valeur
+    entree.delete(0, tk.END)
+    entree.insert(0, str(valeur))
+    return True
 
 
 def synchroniser_entree_etapes():
@@ -646,6 +692,186 @@ def avancer_jeu_normal(board):
     afficher_infos(board)
 
 
+def reinitialiser_auto_steps():
+    state.auto_steps_actif = False
+    state.auto_steps_queue = []
+    state.auto_steps_tentes = []
+    state.auto_steps_resultats = []
+    state.auto_steps_depart = 0
+    state.auto_steps_best = None
+
+
+def generer_steps_alternatifs():
+    minimum = state.auto_steps_min or 1
+    deja_vus = set(state.auto_steps_tentes)
+    essais_restants = max(0, state.auto_steps_max_essais - len(state.auto_steps_tentes))
+    steps = []
+    valeur = minimum
+
+    while len(steps) < essais_restants:
+        if valeur in deja_vus:
+            valeur += 1
+            continue
+
+        steps.append(valeur)
+        valeur += 1
+
+    return steps
+
+
+def stagnation_probablement_finale():
+    if state.solveur is None:
+        return False
+
+    s = state.solveur
+    if s.meilleure_erreur in (None, 0):
+        return False
+
+    cible_vivante = nombre_cellules_vivantes(state.cible)
+    seuil_stagnation = 75 if cible_vivante <= state.config_recherche.seuil_cible_clairesemee else 95
+    generation_min = max(60, seuil_stagnation)
+    reste = s.config.nb_generations_max - s.generation
+
+    return (
+        s.generation >= generation_min
+        and s.stagnation >= seuil_stagnation
+        and reste >= 20
+    )
+
+
+def enregistrer_meilleur_auto_steps():
+    if state.solveur is None or state.solveur.meilleur_individu is None:
+        return
+
+    erreur = float("inf") if state.solveur.meilleure_erreur is None else state.solveur.meilleure_erreur
+    note = float("inf") if state.solveur.meilleure_note_tri is None else state.solveur.meilleure_note_tri
+    stats = {
+        "steps": state.k_inverse,
+        "generation": state.solveur.generation,
+        "erreur": erreur,
+        "note": note,
+        "exactitude": state.solveur.meilleur_score,
+        "stagnation": state.solveur.stagnation,
+        "cellules": nombre_cellules_vivantes(state.solveur.meilleur_individu),
+    }
+    for index, item in enumerate(state.auto_steps_resultats):
+        if item["steps"] == state.k_inverse:
+            state.auto_steps_resultats[index] = stats
+            break
+    else:
+        state.auto_steps_resultats.append(stats)
+
+    meilleur = state.auto_steps_best
+    if meilleur is None or (erreur, note) < (meilleur["erreur"], meilleur["note"]):
+        state.auto_steps_best = {
+            "steps": state.k_inverse,
+            "solveur": state.solveur,
+            "erreur": erreur,
+            "note": note,
+        }
+
+
+def formater_stats_auto_steps(exclure_solution_exacte=False):
+    if not state.auto_steps_resultats:
+        return ""
+
+    resultats = sorted(state.auto_steps_resultats, key=lambda item: (item["erreur"], item["note"]))
+    if exclure_solution_exacte:
+        resultats = [item for item in resultats if item["erreur"] != 0]
+
+    morceaux = []
+    for item in resultats[:state.auto_steps_max_essais]:
+        erreur = "?" if item["erreur"] == float("inf") else "{:.2f}".format(item["erreur"])
+        morceaux.append(
+            "{}g: err {}, {:.1f}%, {} cellules, stagn {}".format(
+                item["steps"],
+                erreur,
+                item["exactitude"],
+                item["cellules"],
+                item["stagnation"],
+            )
+        )
+
+    return " | ".join(morceaux)
+
+
+def restaurer_meilleur_auto_steps():
+    meilleur = state.auto_steps_best
+    if meilleur is None:
+        return
+
+    state.k_inverse = meilleur["steps"]
+    synchroniser_entree_etapes()
+    state.solveur = meilleur["solveur"]
+    if state.solveur.meilleur_individu is not None:
+        state.grille = copier_grille(state.solveur.meilleur_individu)
+        state.resultat = copier_grille(state.solveur.meilleur_resultat)
+        state.evolution = None
+        state.evolution_index = 0
+
+
+def demarrer_solveur_pour_steps(steps):
+    state.k_inverse = steps
+    synchroniser_entree_etapes()
+    state.solveur = initialiser_solveur(state.grille, state.cible, state.k_inverse, state.config_recherche)
+    state.solveur_actif = True
+    state.lecture = False
+    state.vue = "initial"
+    if steps not in state.auto_steps_tentes:
+        state.auto_steps_tentes.append(steps)
+
+
+def limite_essais_auto_atteinte():
+    return len(state.auto_steps_tentes) >= state.auto_steps_max_essais
+
+
+def essayer_step_auto_suivant(board, raison):
+    if not state.auto_steps_actif:
+        return False
+
+    enregistrer_meilleur_auto_steps()
+    if limite_essais_auto_atteinte():
+        state.auto_steps_queue = []
+        restaurer_meilleur_auto_steps()
+        state.solveur_actif = False
+        state.auto_steps_actif = False
+        stats = formater_stats_auto_steps()
+        suffixe = " Stats essais : {}.".format(stats) if stats else ""
+        state.recommendation_steps = "Auto-steps arrêté après {} essais maximum. Meilleur essai conservé : {} générations.{}".format(
+            state.auto_steps_max_essais,
+            state.k_inverse,
+            suffixe,
+        )
+        return False
+
+    if not state.auto_steps_queue:
+        state.auto_steps_queue = generer_steps_alternatifs()
+
+    while state.auto_steps_queue:
+        prochain = state.auto_steps_queue.pop(0)
+        if prochain in state.auto_steps_tentes:
+            continue
+        if hasattr(board, "console"):
+            board.console("Auto-steps : stagnation détectée, essai avec {} générations.".format(prochain))
+        demarrer_solveur_pour_steps(prochain)
+        state.recommendation_steps = "Auto-steps : {}. Essais en cours : {}.".format(
+            raison,
+            ", ".join(str(valeur) for valeur in state.auto_steps_tentes),
+        )
+        return True
+
+    restaurer_meilleur_auto_steps()
+    state.solveur_actif = False
+    state.auto_steps_actif = False
+    stats = formater_stats_auto_steps()
+    suffixe = " Stats essais : {}.".format(stats) if stats else ""
+    state.recommendation_steps = "{} Aucun autre nombre de générations n'a amélioré la recherche. Meilleur essai conservé : {} générations.".format(
+        construire_recommandation_steps(),
+        state.k_inverse,
+    ) + suffixe
+    return False
+
+
 def boucle_solveur(board):
     if not state.solveur_actif:
         rafraichir_plateau(board)
@@ -661,8 +887,26 @@ def boucle_solveur(board):
                 state.evolution = None
                 state.evolution_index = 0
             if state.solveur.termine:
-                state.solveur_actif = False
-                state.recommendation_steps = construire_recommandation_steps()
+                enregistrer_meilleur_auto_steps()
+                if state.solveur.meilleure_erreur == 0:
+                    state.solveur_actif = False
+                    state.auto_steps_actif = False
+                    stats = formater_stats_auto_steps(exclure_solution_exacte=True)
+                    suffixe = " Essais précédents : {}.".format(stats) if stats else ""
+                    state.recommendation_steps = construire_recommandation_steps() + suffixe
+                elif not essayer_step_auto_suivant(board, "limite atteinte pour {} générations".format(state.k_inverse)):
+                    if not state.recommendation_steps:
+                        state.recommendation_steps = construire_recommandation_steps()
+                break
+            if stagnation_probablement_finale():
+                if not state.auto_steps_queue:
+                    state.auto_steps_queue = generer_steps_alternatifs()
+                if state.auto_steps_queue:
+                    essayer_step_auto_suivant(
+                        board,
+                        "stagnation probable avant la limite pour {} générations".format(state.k_inverse),
+                    )
+                    break
 
     rafraichir_plateau(board)
     afficher_infos(board)
@@ -679,21 +923,61 @@ def construire_recommandation_steps():
 
     manquantes, en_trop = compter_differences(state.resultat, state.cible, state.config_recherche)
     cible_vivante = max(1, nombre_cellules_vivantes(state.cible))
-    moins = max(1, state.k_inverse - 1)
-    plus = state.k_inverse + 1
+    voisins = sorted(set([
+        max(1, state.k_inverse - 2),
+        max(1, state.k_inverse - 1),
+        state.k_inverse,
+        state.k_inverse + 1,
+        state.k_inverse + 2,
+    ]))
+    voisins_texte = ", ".join(str(valeur) for valeur in voisins)
+    periode = detecter_periode_simple(state.cible, state.config_recherche)
+
+    if cible_vivante <= state.config_recherche.seuil_cible_clairesemee and state.solveur.stagnation >= 35:
+        valeurs = [1, 2, 3, 4, 5, 6, 8]
+        if periode:
+            return "Cible très petite et stagnation forte (période {}). Recommandation : tester {} générations.".format(
+                periode,
+                ", ".join(str(valeur) for valeur in valeurs),
+            )
+        return "Cible très petite et stagnation forte. Recommandation : tester {} générations.".format(
+            ", ".join(str(valeur) for valeur in valeurs)
+        )
+
+    if periode:
+        compatibles = [
+            valeur for valeur in voisins
+            if valeur % periode == state.k_inverse % periode
+        ]
+        if compatibles:
+            return "Cible périodique détectée (période {}). Recommandation : comparer {} générations.".format(
+                periode,
+                ", ".join(str(valeur) for valeur in compatibles),
+            )
 
     if manquantes >= cible_vivante / 2:
-        return "Résultat imparfait : beaucoup de cellules cible manquent. Recommandation : essayer {} générations ou simplifier la cible.".format(moins)
+        valeurs = sorted(set([max(1, state.k_inverse - 3), max(1, state.k_inverse - 2), max(1, state.k_inverse - 1)]))
+        return "Résultat imparfait : beaucoup de cellules cible manquent. Recommandation : essayer {} générations.".format(
+            ", ".join(str(valeur) for valeur in valeurs)
+        )
     if en_trop > manquantes * 2 and state.solveur.meilleur_score >= 92:
-        return "Résultat proche mais bruité. Recommandation : réessayer {} générations, puis tester {} générations si le bruit persiste.".format(state.k_inverse, plus)
+        return "Résultat proche mais bruité. Recommandation : réessayer {} générations, puis comparer avec {} et {}.".format(
+            state.k_inverse,
+            max(1, state.k_inverse - 1),
+            state.k_inverse + 1,
+        )
     if state.solveur.stagnation >= 35:
-        return "Forte stagnation. Recommandation : essayer {} générations ou redessiner une cible plus compacte.".format(moins)
-    return "Résultat imparfait. Recommandation : relancer avec la même valeur, puis comparer avec {} générations.".format(plus)
+        return "Forte stagnation. Recommandation : essayer {} générations ou rendre la cible plus compacte.".format(voisins_texte)
+    return "Résultat imparfait. Recommandation : relancer avec {}, puis comparer avec {} générations.".format(
+        state.k_inverse,
+        voisins_texte,
+    )
 
 
 def lancer_ou_arreter_solveur(board):
     if state.solveur_actif:
         state.solveur_actif = False
+        reinitialiser_auto_steps()
         rafraichir_plateau(board)
         afficher_infos(board)
         return
@@ -704,19 +988,24 @@ def lancer_ou_arreter_solveur(board):
         rafraichir_plateau(board)
         afficher_infos(board)
         return
+    if not lire_min_auto_steps_depuis_interface(board):
+        rafraichir_plateau(board)
+        afficher_infos(board)
+        return
     if grille_vide(state.cible):
         board.console("Impossible de lancer le solveur : la cible est vide.")
         return
 
     state.recommendation_steps = ""
+    reinitialiser_auto_steps()
+    lire_min_auto_steps_depuis_interface(board)
+    state.auto_steps_actif = True
+    state.auto_steps_depart = state.k_inverse
     state.evolution_active = False
     state.evolution = None
     state.evolution_index = 0
     state.evolution_id += 1
-    state.solveur = initialiser_solveur(state.grille, state.cible, state.k_inverse, state.config_recherche)
-    state.solveur_actif = True
-    state.lecture = False
-    state.vue = "initial"
+    demarrer_solveur_pour_steps(state.k_inverse)
     rafraichir_plateau(board)
     afficher_infos(board)
     board.after(1, boucle_solveur, board)
@@ -732,6 +1021,7 @@ def remplir_initial_aleatoire(board):
     state.resultat = None
     state.solveur = None
     state.solveur_actif = False
+    reinitialiser_auto_steps()
     state.evolution = None
     state.evolution_active = False
     state.evolution_id += 1
@@ -746,6 +1036,7 @@ def tout_effacer():
     state.resultat = None
     state.solveur = None
     state.solveur_actif = False
+    reinitialiser_auto_steps()
     state.evolution = None
     state.evolution_index = 0
     state.evolution_active = False
@@ -793,6 +1084,7 @@ def gestion_souris(board, event):
     state.resultat = None
     state.solveur = None
     state.solveur_actif = False
+    reinitialiser_auto_steps()
     state.evolution = None
     state.evolution_active = False
     state.evolution_id += 1
@@ -841,6 +1133,7 @@ def gestion_clavier(board, event):
             state.resultat = None
             state.solveur = None
             state.solveur_actif = False
+            reinitialiser_auto_steps()
             state.evolution = None
             state.evolution_active = False
             state.evolution_id += 1
@@ -850,12 +1143,14 @@ def gestion_clavier(board, event):
             state.resultat = None
             state.solveur = None
             state.solveur_actif = False
+            reinitialiser_auto_steps()
             state.evolution = None
             state.evolution_active = False
             state.evolution_id += 1
         elif t == "escape":
             state.solveur_actif = False
             state.evolution_active = False
+            reinitialiser_auto_steps()
 
     rafraichir_plateau(board)
     afficher_infos(board)
@@ -1127,6 +1422,7 @@ def libelle_role(role):
         "cible bruitee": "cible bruitée",
         "graine locale": "graine locale",
         "relance locale": "relance locale",
+        "relance stagnation": "relance stagnation",
         "aléatoire guidé": "aléatoire guidé",
         "aleatoire guide": "aléatoire guidé",
         "remplacement doublon": "remplacement de doublon",
@@ -1150,6 +1446,8 @@ def description_role(role):
         return "nouvel individu aléatoire pour relancer la diversité"
     if "graine locale" in role_min:
         return "petit ancêtre possible énuméré près de la cible"
+    if "relance stagnation" in role_min:
+        return "nouveau candidat injecté pour casser une longue stagnation"
     if "relance locale" in role_min:
         return "graine locale réinjectée après stagnation"
     if "amelioration" in role_min:

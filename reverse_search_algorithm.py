@@ -45,6 +45,10 @@ class SearchConfig:
     max_cases_graines_locales: int = 18
     marge_graines_locales: int = 1
     max_generations_graines_locales: int = 8
+    seuil_relance_stagnation: int = 55
+    intervalle_relance_stagnation: int = 20
+    fraction_relance_stagnation: float = 0.45
+    nb_essais_nettoyage: int = 80
 
 
 @dataclass
@@ -177,6 +181,19 @@ def compter_differences(resultat, cible, config=None):
                 en_trop += 1
 
     return manquantes, en_trop
+
+
+def detecter_periode_simple(cible, config=None, max_periode=8):
+    config = config or SearchConfig()
+    reference = cle_grille(cible)
+    courant = copier_grille(cible)
+
+    for periode in range(1, max_periode + 1):
+        courant = simuler(courant, 1, config.bords_toriques)
+        if cle_grille(courant) == reference:
+            return periode
+
+    return None
 
 
 def score_exactitude(resultat, cible, config=None):
@@ -321,9 +338,6 @@ def creer_graines_locales_cible(cible, steps, zone, carte_distance, config):
         return []
     if len(cellules_cibles) > config.seuil_cible_clairesemee:
         return []
-    if steps > config.max_generations_graines_locales:
-        return []
-
     lzone_min, lzone_max, czone_min, czone_max = zone
     marge = config.marge_graines_locales
     lmin = max(lzone_min, min(i for i, _ in cellules_cibles) - marge)
@@ -340,6 +354,11 @@ def creer_graines_locales_cible(cible, steps, zone, carte_distance, config):
     taille_max = min(config.max_cellules_graines_locales, len(cases))
     cible_cellules = set(cellules_cibles)
 
+    horizons = [steps]
+    utiliser_prescore_court = steps > config.max_generations_graines_locales
+    if utiliser_prescore_court:
+        horizons = list(range(1, config.max_generations_graines_locales + 1))
+
     for taille in range(1, taille_max + 1):
         for choix in combinations(cases, taille):
             cle = frozenset(choix)
@@ -347,17 +366,40 @@ def creer_graines_locales_cible(cible, steps, zone, carte_distance, config):
                 continue
 
             vus.add(cle)
-            resultat = simuler_cellules_vivantes(choix, steps, config)
-            erreur = erreur_cellules_par_rapport_a_cible(
-                resultat,
+            meilleure_erreur_horizon = None
+            for horizon in horizons:
+                resultat = simuler_cellules_vivantes(choix, horizon, config)
+                erreur = erreur_cellules_par_rapport_a_cible(
+                    resultat,
+                    cible_cellules,
+                    carte_distance,
+                    config,
+                )
+                if meilleure_erreur_horizon is None or erreur < meilleure_erreur_horizon:
+                    meilleure_erreur_horizon = erreur
+
+            if utiliser_prescore_court:
+                score_tri = (meilleure_erreur_horizon or 0) + taille * config.penalite_cellule_initiale
+                meilleurs.append((score_tri, meilleure_erreur_horizon or 0, taille, choix))
+            else:
+                meilleurs.append((meilleure_erreur_horizon or 0, meilleure_erreur_horizon or 0, taille, choix))
+
+    meilleurs.sort(key=lambda item: (item[0], item[1], item[2]))
+    if utiliser_prescore_court:
+        candidats_courts = meilleurs[:max(config.nb_graines_locales * 8, config.nb_graines_locales)]
+        meilleurs = []
+        for _, _, taille, choix in candidats_courts:
+            resultat_vrai = simuler_cellules_vivantes(choix, steps, config)
+            erreur_vraie = erreur_cellules_par_rapport_a_cible(
+                resultat_vrai,
                 cible_cellules,
                 carte_distance,
                 config,
             )
-            score_tri = erreur + taille * config.penalite_cellule_initiale
-            meilleurs.append((score_tri, erreur, taille, choix))
+            score_tri = erreur_vraie + taille * config.penalite_cellule_initiale
+            meilleurs.append((score_tri, erreur_vraie, taille, choix))
+        meilleurs.sort(key=lambda item: (item[0], item[1], item[2]))
 
-    meilleurs.sort(key=lambda item: (item[0], item[1], item[2]))
     return [
         creer_grille_depuis_cellules(item[3], config)
         for item in meilleurs[:config.nb_graines_locales]
@@ -410,6 +452,61 @@ def evaluer_individu(individu, role, cible, steps, cache, carte_distance, config
     cache[cle] = (score_tri, erreur, exactitude, copier_grille(resultat))
     limiter_cache(cache, config.taille_cache_max)
     return Evaluation(score_tri, erreur, exactitude, copier_grille(individu), resultat, role)
+
+
+def cellule_isolee(individu, ligne, col, config):
+    return all(individu[i][j] == 0 for i, j in voisins_cellule(ligne, col, config))
+
+
+def nettoyer_solution_initiale(individu, cible, steps, config, carte_distance=None, cache=None):
+    carte_distance = carte_distance or construire_carte_distance_cible(cible, config)
+    cache = cache if cache is not None else {}
+    meilleur = evaluer_individu(
+        individu,
+        "solution nettoyee",
+        cible,
+        steps,
+        cache,
+        carte_distance,
+        config,
+    )
+    erreur_a_preserver = meilleur.erreur
+    cellules = cellules_vivantes(meilleur.individu, config)
+    cellules.sort(
+        key=lambda cellule: (
+            cellule_isolee(meilleur.individu, cellule[0], cellule[1], config),
+            carte_distance[cellule[0]][cellule[1]],
+        ),
+        reverse=True,
+    )
+
+    for index, (i, j) in enumerate(cellules):
+        if index >= config.nb_essais_nettoyage:
+            break
+        if meilleur.individu[i][j] == 0:
+            continue
+
+        candidat = copier_grille(meilleur.individu)
+        candidat[i][j] = 0
+        evaluation = evaluer_individu(
+            candidat,
+            "solution nettoyee",
+            cible,
+            steps,
+            cache,
+            carte_distance,
+            config,
+        )
+
+        if erreur_a_preserver == 0:
+            acceptable = evaluation.erreur == 0
+        else:
+            acceptable = evaluation.erreur <= meilleur.erreur
+
+        if acceptable:
+            meilleur = evaluation
+
+    return meilleur
 
 
 def evaluer_population(population, roles, cible, steps, cache, carte_distance, config):
@@ -555,12 +652,21 @@ def _copier_evaluation(evaluation, role=None):
 
 
 def _mettre_a_jour_meilleur_global(solveur, meilleure):
-    if solveur.meilleure_note_tri is None or meilleure.score_tri < solveur.meilleure_note_tri:
-        solveur.meilleure_note_tri = meilleure.score_tri
-        solveur.meilleure_erreur = meilleure.erreur
-        solveur.meilleur_individu = copier_grille(meilleure.individu)
-        solveur.meilleur_resultat = copier_grille(meilleure.resultat)
-        solveur.meilleur_score = meilleure.exactitude
+    meilleure_nettoyee = nettoyer_solution_initiale(
+        meilleure.individu,
+        solveur.cible,
+        solveur.steps,
+        solveur.config,
+        solveur.carte_distance,
+        solveur.cache,
+    )
+
+    if solveur.meilleure_note_tri is None or meilleure_nettoyee.score_tri < solveur.meilleure_note_tri:
+        solveur.meilleure_note_tri = meilleure_nettoyee.score_tri
+        solveur.meilleure_erreur = meilleure_nettoyee.erreur
+        solveur.meilleur_individu = copier_grille(meilleure_nettoyee.individu)
+        solveur.meilleur_resultat = copier_grille(meilleure_nettoyee.resultat)
+        solveur.meilleur_score = meilleure_nettoyee.exactitude
         solveur.stagnation = 0
         return True
 
@@ -645,6 +751,11 @@ def avancer_solveur_une_generation(solveur):
         solveur.raison_arret = "solution exacte"
         return solveur
 
+    if solveur.meilleure_erreur == 0:
+        solveur.termine = True
+        solveur.raison_arret = "solution exacte"
+        return solveur
+
     if solveur.generation >= config.nb_generations_max:
         solveur.termine = True
         solveur.raison_arret = "limite de générations"
@@ -658,6 +769,29 @@ def avancer_solveur_une_generation(solveur):
         nouveaux_roles.append("elite conservee")
 
     nb_injections = int(config.taille_population * taux_injection)
+    relance_forte = (
+        solveur.stagnation >= config.seuil_relance_stagnation
+        and config.intervalle_relance_stagnation > 0
+        and (solveur.stagnation - config.seuil_relance_stagnation) % config.intervalle_relance_stagnation == 0
+    )
+    if relance_forte:
+        nb_injections = max(
+            nb_injections,
+            int(config.taille_population * config.fraction_relance_stagnation),
+        )
+
+        if solveur.meilleur_individu is not None:
+            meilleur_mute = copier_grille(solveur.meilleur_individu)
+            muter_zone_guidee(
+                meilleur_mute,
+                solveur.zone,
+                solveur.carte_distance,
+                min(0.35, taux_mutation * 4),
+                solveur.rng,
+            )
+            nouvelle_population.append(meilleur_mute)
+            nouveaux_roles.append("relance stagnation")
+
     nb_relances_locales = 0
     if solveur.graines_locales and solveur.stagnation >= 20:
         nb_relances_locales = min(nb_injections, len(solveur.graines_locales))
@@ -674,20 +808,23 @@ def avancer_solveur_une_generation(solveur):
                     solveur.rng,
                 )
             nouvelle_population.append(graine)
-            nouveaux_roles.append("relance locale")
+            nouveaux_roles.append("relance stagnation" if relance_forte else "relance locale")
 
     densites = densites_recherche(solveur.cible, solveur.zone, config)
     for _ in range(max(0, nb_injections - nb_relances_locales)):
+        densite = solveur.rng.choice(densites)
+        if relance_forte:
+            densite = solveur.rng.choice([0.01, 0.02, 0.04, densites[0]])
         nouvelle_population.append(
             individu_aleatoire_guide(
                 solveur.zone,
                 solveur.carte_distance,
-                solveur.rng.choice(densites),
+                densite,
                 config,
                 solveur.rng,
             )
         )
-        nouveaux_roles.append("injection")
+        nouveaux_roles.append("relance stagnation" if relance_forte else "injection")
 
     while len(nouvelle_population) < config.taille_population:
         parent_a = selection_tournoi(population_evaluee, solveur.rng)

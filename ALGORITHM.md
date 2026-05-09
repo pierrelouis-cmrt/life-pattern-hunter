@@ -17,6 +17,7 @@ Le projet est volontairement découpé pour que chaque fichier ait une responsab
 - `app_state.py` : état courant de l'application.
 - `ui_app.py` : interface graphique, modes, boutons, barre de progression et fenêtre population.
 - `reverse-search.py` : point d'entrée historique.
+- `clean-solution.py` : nettoyage texte d'une solution déjà trouvée.
 
 Cette séparation permet de tester l'algorithme sans ouvrir de fenêtre graphique.
 
@@ -119,11 +120,21 @@ Pour corriger cela sans changer de famille d'algorithme, `creer_graines_locales_
 4. simuler ces mini-candidats pendant `X` générations ;
 5. garder seulement les meilleurs comme graines de départ.
 
-Cette phase retrouve par exemple l'ancêtre perpendiculaire d'un blinker de 3 cellules. Elle est volontairement bornée : elle ne s'active que si la cible est petite, si la boîte locale reste petite et si le nombre de générations reste raisonnable.
+Cette phase retrouve par exemple l'ancêtre perpendiculaire d'un blinker de 3 cellules. Elle est volontairement bornée : elle ne s'active que si la cible est petite et si la boîte locale reste petite.
+
+Si le nombre de générations demandé est grand, le solveur teste aussi ces mini-candidats sur de courts horizons `1..8`, puis réévalue les meilleurs sur le vrai nombre de générations. Cela aide les petites cibles périodiques, par exemple un blinker demandé à 9 ou 11 générations.
 
 Pour rester rapide, ces mini-candidats ne sont pas simulés comme des grilles complètes. Ils sont simulés comme des ensembles de cellules vivantes, ce qui rend leur coût proportionnel au nombre de cellules actives plutôt qu'aux `576` cases du plateau.
 
 En cas de stagnation, les meilleures graines locales peuvent aussi être réinjectées dans la population avant les injections aléatoires classiques. Cela relance la recherche autour de structures plausibles au lieu d'ajouter seulement du bruit.
+
+## Nettoyage conservateur
+
+Quand une nouvelle meilleure solution est trouvée, le solveur essaie de la simplifier avant de l'enregistrer comme meilleur global.
+
+Le nettoyage parcourt les cellules vivantes de la grille initiale en privilégiant les cellules isolées et les cellules éloignées de la cible. Pour chaque cellule, il teste une suppression puis resimule la grille initiale. La suppression est gardée seulement si l'erreur finale reste identique ou diminue. Si la solution était exacte, l'erreur doit rester exactement `0`.
+
+Cette étape retire donc les cellules parasites qui meurent vite ou ne participent pas au motif final, sans casser une solution correcte. Le script `clean-solution.py` applique la même logique depuis deux fichiers ASCII (`#` vivant, `.` mort).
 
 ## Évaluation d'un individu
 
@@ -176,13 +187,15 @@ Le cache améliore le temps réel, mais ne change pas le pire cas théorique.
 2. Trier les individus par score.
 3. Tenter une petite amélioration locale du meilleur individu.
 4. Mettre à jour le meilleur global.
-5. Arrêter si une solution exacte est trouvée.
-6. Garder les élites.
-7. Si la recherche stagne, réinjecter quelques graines locales.
-8. Injecter quelques nouveaux candidats aléatoires.
-9. Remplir le reste par sélection, croisement et mutation.
-10. Supprimer les doublons.
-11. Produire un instantané pour l'interface.
+5. Nettoyer conservativement ce meilleur global.
+6. Arrêter si une solution exacte est trouvée.
+7. Garder les élites.
+8. Si la recherche stagne, réinjecter quelques graines locales.
+9. Si la stagnation est longue, lancer une relance forte.
+10. Injecter quelques nouveaux candidats aléatoires.
+11. Remplir le reste par sélection, croisement et mutation.
+12. Supprimer les doublons.
+13. Produire un instantané pour l'interface.
 
 ## Sélection, croisement, mutation
 
@@ -198,6 +211,26 @@ La mutation est guidée :
 Si le solveur stagne, le taux de mutation et le taux d'injection aléatoire augmentent. Cela force la recherche à explorer de nouvelles pistes.
 
 Pour les cibles clairsemées, les densités aléatoires sont aussi adaptées à la taille de la zone de recherche. Le solveur essaie davantage de candidats très peu chargés, ce qui évite que les petites cibles soient noyées sous des cellules parasites.
+
+## Relance anti-stagnation
+
+L'augmentation progressive de mutation ne suffit pas toujours : la population peut rester longtemps autour du même mauvais compromis.
+
+Le solveur surveille donc la stagnation. À partir d'un seuil, puis à intervalles réguliers, il conserve les élites et le meilleur global, puis remplace une partie importante de la population par des densités très faibles, des graines locales et quelques mutations plus fortes du meilleur global. Ces individus sont marqués `relance stagnation` dans la fenêtre population.
+
+L'objectif n'est pas de repartir de zéro, mais de casser vite une longue stagnation.
+
+## Essais automatiques de générations
+
+Certaines cibles simples ne convergent pas avec le nombre de générations choisi, alors qu'elles peuvent avoir un ancêtre avec une valeur voisine ou beaucoup plus courte.
+
+L'interface surveille donc la recherche en cours. Si le meilleur global n'a pas progressé pendant longtemps, que la recherche a déjà dépassé un minimum de générations, et qu'il reste encore beaucoup de budget avant la limite, elle considère que le solveur risque de stagner jusqu'au bout.
+
+Dans ce cas, l'application ne change pas l'algorithme génétique : elle arrête seulement l'essai courant, garde son meilleur résultat, puis relance `initialiser_solveur` avec un autre `X`. La file d'essais est limitée à 8 valeurs au total, essai initial compris, pour éviter de tourner indéfiniment quand aucune génération plausible n'a d'ancêtre.
+
+La file d'essais automatiques est volontairement simple : elle commence au minimum optionnel saisi dans l'interface, ou à `1` si le champ est vide, puis ajoute `1` à chaque nouvel essai. Les valeurs déjà testées sont sautées.
+
+Si un essai trouve une solution exacte, la recherche s'arrête. Sinon, quand la file est vide ou que les 8 essais sont atteints, l'interface restaure le meilleur essai global. Le message final affiche les stats des essais testés : nombre de générations, erreur, exactitude, taille de la grille initiale et stagnation.
 
 ## Amélioration locale
 
@@ -237,9 +270,11 @@ génération courante / générations maximales
 
 Si la solution n'est pas exacte, l'interface regarde les cellules manquantes, les cellules en trop et la stagnation :
 
-- beaucoup de cellules manquantes : essayer moins de générations ;
-- résultat proche mais bruité : relancer avec le même nombre ou essayer une génération de plus ;
-- forte stagnation : essayer moins de générations ou une cible plus compacte.
+- beaucoup de cellules manquantes : essayer plusieurs valeurs plus petites ;
+- résultat proche mais bruité : relancer avec le même nombre, puis comparer avec `X - 1` et `X + 1` ;
+- forte stagnation sur une petite cible : tester `1, 2, 3, 4, 5, 6, 8` générations ;
+- cible périodique simple : signaler la période détectée et recommander des valeurs compatibles.
+- stagnation probablement finale : essayer automatiquement les autres valeurs plausibles avant d'attendre la limite.
 
 Cette recommandation n'est pas une preuve mathématique. C'est une aide de lecture pour guider les essais suivants.
 
@@ -257,6 +292,7 @@ On garde seulement les notations nécessaires :
 - `C` : taille maximale du cache ;
 - `T` : nombre de cellules vivantes dans la cible ;
 - `Q` : nombre de mini-graines testées au lancement.
+- `R` : nombre maximal d'essais de nettoyage conservateur.
 
 Les valeurs principales du programme sont :
 
@@ -266,6 +302,7 @@ P = 120
 L = 18
 G = 420
 C = 8000
+R = 80
 ```
 
 ### Évaluation d'un candidat
@@ -369,7 +406,7 @@ Le `Q log Q` vient du tri des graines pour garder les meilleures. En pratique, c
 
 ### Une génération génétique
 
-Une génération de `avancer_solveur_une_generation` contient quatre coûts importants.
+Une génération de `avancer_solveur_une_generation` contient cinq coûts importants.
 
 1. Évaluer la population :
 
@@ -393,7 +430,15 @@ Le solveur essaie `L` petites mutations autour du meilleur individu. Dans le pir
 O(L * X * N)
 ```
 
-4. Construire la génération suivante :
+4. Nettoyer le meilleur candidat si besoin :
+
+Le nettoyage teste au plus `R` suppressions de cellules. Chaque suppression resimule une grille :
+
+```text
+O(R * X * N)
+```
+
+5. Construire la génération suivante :
 
 Les élites sont copiées, l'instantané pédagogique est créé, les injections sont ajoutées, les enfants sont croisés puis mutés, et les doublons sont supprimés. Toutes ces opérations parcourent des grilles ou des zones de grille. Comme la zone de recherche ne peut pas dépasser le plateau, ce coût est borné par :
 
@@ -404,25 +449,25 @@ O(P * N)
 En additionnant :
 
 ```text
-O(P * X * N + P log P + L * X * N + P * N)
+O(P * X * N + P log P + L * X * N + R * X * N + P * N)
 ```
 
 On regroupe les évaluations de population et les essais locaux :
 
 ```text
-O((P + L) * X * N + P log P + P * N)
+O((P + L + R) * X * N + P log P + P * N)
 ```
 
 Comme `X >= 1`, le terme `P * N` est inclus dans `P * X * N`. La complexité d'une génération génétique est donc :
 
 ```text
-O((P + L) * X * N + P log P)
+O((P + L + R) * X * N + P log P)
 ```
 
 Dans ce programme, le terme dominant est presque toujours la simulation des candidats. On peut donc résumer le coût principal par :
 
 ```text
-O((P + L) * X * N)
+O((P + L + R) * X * N)
 ```
 
 Cette simplification reste rigoureuse : le tri, les copies et le dédoublonnage ont été comptés avant d'être dominés.
@@ -432,7 +477,7 @@ Cette simplification reste rigoureuse : le tri, les copies et le dédoublonnage 
 Le solveur effectue au plus `G` générations génétiques. Le coût total hors initialisation est donc :
 
 ```text
-O(G * ((P + L) * X * N + P log P))
+O(G * ((P + L + R) * X * N + P log P))
 ```
 
 En ajoutant l'initialisation et les graines locales :
@@ -443,7 +488,7 @@ O(
   + P * N
   + Q * (X * K + T + K)
   + Q log Q
-  + G * ((P + L) * X * N + P log P)
+  + G * ((P + L + R) * X * N + P log P)
 )
 ```
 
@@ -455,11 +500,11 @@ O(
   + P * N
   + Q * (X * K + N + K)
   + Q log Q
-  + G * ((P + L) * X * N + P log P)
+  + G * ((P + L + R) * X * N + P log P)
 )
 ```
 
-Dans la configuration réelle, `N`, `P`, `L`, `G` et `Q` sont plafonnés. Le temps d'exécution observé dépend donc surtout de :
+Dans la configuration réelle, `N`, `P`, `L`, `G`, `Q` et `R` sont plafonnés. Le temps d'exécution observé dépend donc surtout de :
 
 - `X`, car chaque évaluation simule plus ou moins longtemps ;
 - le nombre de générations génétiques réellement exécutées ;

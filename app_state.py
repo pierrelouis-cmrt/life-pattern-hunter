@@ -30,6 +30,14 @@ class AppState:
     evolution_active: bool = False
     evolution_id: int = 0
     recommendation_steps: str = ""
+    auto_steps_actif: bool = False
+    auto_steps_queue: list = field(default_factory=list)
+    auto_steps_tentes: list = field(default_factory=list)
+    auto_steps_resultats: list = field(default_factory=list)
+    auto_steps_depart: int = 0
+    auto_steps_min: int | None = None
+    auto_steps_max_essais: int = 8
+    auto_steps_best: object | None = None
     config_recherche: SearchConfig = field(default_factory=SearchConfig)
 
 
