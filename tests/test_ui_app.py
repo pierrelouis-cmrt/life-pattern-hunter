@@ -1,9 +1,26 @@
 import unittest
+from unittest.mock import patch
 from types import SimpleNamespace
 
 import ui_app
 from app_state import nouvel_etat
-from life_rules import nouvelle_grille
+from life_rules import COLS, ROWS, nouvelle_grille
+
+
+class FakeBoard:
+    def __init__(self):
+        self.colors = []
+        self.messages = []
+        self.info = []
+
+    def setBgColor(self, row, col, color):
+        self.colors.append((row, col, color))
+
+    def display(self, text, row=0, col=0, color=None):
+        self.info.append((text, row, col, color))
+
+    def console(self, *message):
+        self.messages.append(message)
 
 
 class UiAppTests(unittest.TestCase):
@@ -29,6 +46,37 @@ class UiAppTests(unittest.TestCase):
         self.assertTrue(ui_app.state.solveur_actif)
         self.assertIs(solveur, ui_app.state.solveur)
         self.assertIs(resultat, ui_app.state.resultat)
+
+    def test_resolution_random_button_fills_final_target_and_resets_solver_state(self):
+        ui_app.state.mode_app = "resolution"
+        ui_app.state.vue = "resultat"
+        ui_app.state.resultat = nouvelle_grille(1)
+        ui_app.state.solveur = object()
+        ui_app.state.solveur_actif = True
+        ui_app.state.evolution = [nouvelle_grille(0)]
+        ui_app.state.evolution_active = True
+        ui_app.state.recommendation_steps = "old recommendation"
+
+        random_values = [0.0 if index % 2 == 0 else 1.0 for index in range(ROWS * COLS)]
+        with patch("ui_app.random.random", side_effect=random_values):
+            ui_app.remplir_cible_aleatoire(FakeBoard())
+
+        self.assertEqual(ROWS * COLS // 2, sum(sum(ligne) for ligne in ui_app.state.cible))
+        self.assertIsNone(ui_app.state.resultat)
+        self.assertIsNone(ui_app.state.solveur)
+        self.assertFalse(ui_app.state.solveur_actif)
+        self.assertIsNone(ui_app.state.evolution)
+        self.assertFalse(ui_app.state.evolution_active)
+        self.assertEqual("", ui_app.state.recommendation_steps)
+        self.assertEqual("edition", ui_app.state.vue)
+
+    def test_resolution_random_button_is_ignored_outside_resolution_mode(self):
+        ui_app.state.mode_app = "normal"
+        ui_app.state.cible[0][0] = 1
+
+        ui_app.remplir_cible_aleatoire(FakeBoard())
+
+        self.assertEqual(1, ui_app.state.cible[0][0])
 
     def test_recommendation_lists_concrete_steps_for_tiny_stagnating_target(self):
         ui_app.state.k_inverse = 9

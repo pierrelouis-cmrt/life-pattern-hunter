@@ -58,6 +58,7 @@ ui = {
     "start_solver_button": None,
     "normal_play_button": None,
     "target_button": None,
+    "target_random_button": None,
     "initial_button": None,
     "result_button": None,
     "evolution_button": None,
@@ -260,6 +261,7 @@ def creer_interface(board):
 
     ui["start_solver_button"] = creer_bouton(resolution_frame, "Lancer le solveur", lambda: lancer_ou_arreter_solveur(board), PRIMARY_BUTTON_BG)
     ui["target_button"] = creer_bouton(resolution_frame, "Modifier la cible", lambda: afficher_vue(board, "edition"))
+    ui["target_random_button"] = creer_bouton(resolution_frame, "Grille finale aléatoire", lambda: remplir_cible_aleatoire(board))
     ui["initial_button"] = creer_bouton(resolution_frame, "Meilleure grille initiale", lambda: afficher_vue(board, "initial"))
     ui["result_button"] = creer_bouton(resolution_frame, "Afficher le résultat", lambda: afficher_vue(board, "resultat"))
     ui["evolution_button"] = creer_bouton(resolution_frame, "Lire l'évolution", lambda: lancer_ou_arreter_evolution(board))
@@ -386,7 +388,7 @@ def actualiser_interface():
         if bouton is not None and bouton.winfo_exists():
             bouton.configure(state=tk.NORMAL if state.mode_app == "normal" else tk.DISABLED)
 
-    for key in ("target_button", "initial_button", "result_button", "evolution_button", "previous_button", "next_button"):
+    for key in ("target_button", "target_random_button", "initial_button", "result_button", "evolution_button", "previous_button", "next_button"):
         bouton = ui.get(key)
         if bouton is not None and bouton.winfo_exists():
             bouton.configure(state=tk.NORMAL if resolution else tk.DISABLED)
@@ -990,6 +992,30 @@ def remplir_initial_aleatoire(board):
     state.evolution_active = False
     state.evolution_id += 1
     state.recommendation_steps = ""
+    rafraichir_plateau(board)
+    afficher_infos(board)
+
+
+def remplir_cible_aleatoire(board):
+    if state.mode_app != "resolution":
+        return
+
+    state.cible = nouvelle_grille(0, ROWS, COLS)
+    for i in range(ROWS):
+        for j in range(COLS):
+            if random.random() < state.config_recherche.densite_initiale:
+                state.cible[i][j] = 1
+
+    state.resultat = None
+    state.solveur = None
+    state.solveur_actif = False
+    reinitialiser_auto_steps()
+    state.evolution = None
+    state.evolution_index = 0
+    state.evolution_active = False
+    state.evolution_id += 1
+    state.recommendation_steps = ""
+    state.vue = "edition"
     rafraichir_plateau(board)
     afficher_infos(board)
 
