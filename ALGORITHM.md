@@ -6,7 +6,7 @@ Le mode **Résolution** cherche une grille initiale `G0` telle que :
 simuler(G0, X) ~= cible
 ```
 
-`X` est le nombre de générations choisi dans l'interface. `~=` signifie "aussi proche que possible", car une cible peut avoir plusieurs ancêtres, aucun ancêtre, ou des ancêtres difficiles à trouver.
+`X` est le nombre de générations testé par l'interface. `~=` signifie "aussi proche que possible", car une cible peut avoir plusieurs ancêtres, aucun ancêtre, ou des ancêtres difficiles à trouver.
 
 ## Architecture du programme
 
@@ -222,13 +222,13 @@ L'objectif n'est pas de repartir de zéro, mais de casser vite une longue stagna
 
 ## Essais automatiques de générations
 
-Certaines cibles simples ne convergent pas avec le nombre de générations choisi, alors qu'elles peuvent avoir un ancêtre avec une valeur voisine ou beaucoup plus courte.
+Certaines cibles simples ne convergent pas avec le nombre de générations testé, alors qu'elles peuvent avoir un ancêtre avec une valeur voisine ou beaucoup plus courte.
 
 L'interface surveille donc la recherche en cours. Si le meilleur global n'a pas progressé pendant longtemps, que la recherche a déjà dépassé un minimum de générations, et qu'il reste encore beaucoup de budget avant la limite, elle considère que le solveur risque de stagner jusqu'au bout.
 
 Dans ce cas, l'application ne change pas l'algorithme génétique : elle arrête seulement l'essai courant, garde son meilleur résultat, puis relance `initialiser_solveur` avec un autre `X`. La file d'essais est limitée à 8 valeurs au total, essai initial compris, pour éviter de tourner indéfiniment quand aucune génération plausible n'a d'ancêtre.
 
-La file d'essais automatiques est volontairement simple : elle commence au minimum optionnel saisi dans l'interface, ou à `1` si le champ est vide, puis ajoute `1` à chaque nouvel essai. Les valeurs déjà testées sont sautées.
+La file d'essais automatiques est volontairement simple : elle commence au `Minimum de générations` saisi dans l'interface, ou à `1` si le champ est vide, puis ajoute `1` à chaque nouvel essai. Les valeurs déjà testées sont sautées.
 
 Si un essai trouve une solution exacte, la recherche s'arrête. Sinon, quand la file est vide ou que les 8 essais sont atteints, l'interface restaure le meilleur essai global. Le message final affiche les stats des essais testés : nombre de générations, erreur, exactitude, taille de la grille initiale et stagnation.
 

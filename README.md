@@ -5,7 +5,7 @@ Projet Eniseboard autour du jeu de la vie de Conway.
 L'application a deux usages :
 
 - **Jeu normal** : dessiner une grille initiale et observer son évolution avec les règles classiques du jeu de la vie.
-- **Résolution** : dessiner une cible finale, choisir un nombre de générations, puis chercher une grille initiale qui produit cette cible après ces générations.
+- **Résolution** : dessiner une cible finale, choisir éventuellement un minimum de générations, puis chercher automatiquement une grille initiale qui produit cette cible.
 
 ## Lancement
 
@@ -53,13 +53,12 @@ Dans ce mode, la grille dessinée est la cible finale souhaitée.
 Déroulement :
 
 1. Dessiner la cible finale.
-2. Choisir le nombre de générations entre la grille initiale cherchée et la cible.
-3. Optionnel : renseigner `Min auto-steps` pour empêcher les relances automatiques de tester des valeurs trop petites.
-4. Cliquer sur `Lancer le solveur`.
-5. Observer la barre de progression, l'erreur, l'exactitude, la stagnation et la taille du cache.
-6. Inspecter `Meilleure grille initiale`, `Afficher le résultat` et `Lire l'évolution`.
+2. Optionnel : renseigner `Minimum de générations` pour empêcher les relances automatiques de tester des valeurs trop petites.
+3. Cliquer sur `Lancer le solveur`.
+4. Observer la barre de progression, l'erreur, l'exactitude, la stagnation et la taille du cache.
+5. Inspecter `Meilleure grille initiale`, `Afficher le résultat` et `Lire l'évolution`.
 
-Si le résultat final n'est pas exact, l'interface affiche des nombres de générations concrets à essayer. Pour les cibles très petites, elle propose notamment des valeurs courtes comme `1, 2, 3, 4, 5, 6, 8`, et signale les périodes simples quand elle en détecte une. Quand la stagnation semble devoir durer jusqu'à la limite, l'application lance automatiquement d'autres essais en partant de `Min auto-steps`, puis en ajoutant `1` à chaque nouvel essai. Elle teste au maximum 8 valeurs de générations au total, essai initial inclus, et garde le meilleur résultat global.
+Si le résultat final n'est pas exact, l'interface affiche des nombres de générations concrets à essayer. Pour les cibles très petites, elle propose notamment des valeurs courtes comme `1, 2, 3, 4, 5, 6, 8`, et signale les périodes simples quand elle en détecte une. Quand la stagnation semble devoir durer jusqu'à la limite, l'application lance automatiquement d'autres essais en partant du `Minimum de générations`, puis en ajoutant `1` à chaque nouvel essai. Elle teste au maximum 8 valeurs de générations au total, essai initial inclus, et garde le meilleur résultat global.
 
 ## Fenêtre population
 
@@ -80,7 +79,7 @@ Le solveur utilise donc un algorithme génétique :
 
 - créer une population de grilles initiales candidates ;
 - ajouter des graines locales quand la cible finale est très petite ;
-- simuler chaque candidate pendant le nombre de générations choisi ;
+- simuler chaque candidate pendant le nombre de générations testé ;
 - comparer le résultat à la cible ;
 - conserver les meilleurs candidats ;
 - créer de nouveaux candidats par sélection, croisement, mutation, graines locales et injection aléatoire ;
@@ -93,7 +92,7 @@ Pour éviter la stagnation sur les cibles de quelques cellules, le solveur énum
 
 Quand la stagnation dure trop longtemps, une relance forte remplace une partie de la population par des injections très clairsemées, des graines locales et quelques mutations plus agressives du meilleur global. Les élites restent conservées.
 
-Si cette relance ne débloque toujours pas la recherche, l'interface considère que le `steps` courant est probablement mauvais pour cette cible. Elle passe alors automatiquement à `Min auto-steps`, puis `Min auto-steps + 1`, puis `Min auto-steps + 2`, sans attendre les 420 générations, puis restaure le meilleur essai trouvé. Le statut final affiche les stats des essais : `steps`, erreur, exactitude, nombre de cellules de la meilleure grille initiale et stagnation. Le champ `Min auto-steps` permet d'éviter les solutions trop courtes, par exemple celles à 1 génération.
+Si cette relance ne débloque toujours pas la recherche, l'interface considère que le `steps` courant est probablement mauvais pour cette cible. Elle passe alors automatiquement au `Minimum de générations`, puis `minimum + 1`, puis `minimum + 2`, sans attendre les 420 générations, puis restaure le meilleur essai trouvé. Le statut final affiche les stats des essais : `steps`, erreur, exactitude, nombre de cellules de la meilleure grille initiale et stagnation. Le champ `Minimum de générations` permet d'éviter les solutions trop courtes, par exemple celles à 1 génération.
 
 Le nettoyage automatique est conservateur : il retire une cellule de la grille initiale seulement si la simulation finale garde la même erreur ou l'améliore. Une solution exacte reste donc exacte. Le même nettoyage peut être lancé hors interface :
 

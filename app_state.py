@@ -22,7 +22,7 @@ class AppState:
     lecture: bool = False
     generation_life: int = 0
     delai_animation: int = DELAI_ANIMATION_MS
-    k_inverse: int = 5
+    k_inverse: int = 1
     solveur_actif: bool = False
     solveur: object | None = None
     evolution: list | None = None

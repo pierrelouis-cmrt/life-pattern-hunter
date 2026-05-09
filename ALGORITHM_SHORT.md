@@ -55,7 +55,7 @@ Le solveur ajoute donc des **graines locales**. Pour une cible clairsemée, il �
 
 Si la stagnation devient longue, le solveur conserve les élites mais remplace une partie de la population par des candidats très clairsemés, des graines locales et des mutations plus fortes du meilleur global.
 
-Si cette stagnation continue assez longtemps, l'interface garde le meilleur essai courant et relance automatiquement le solveur depuis le minimum automatique saisi, puis `minimum + 1`, puis `minimum + 2`. Elle teste au maximum 8 valeurs au total, essai initial inclus. Le statut final résume les stats des meilleurs essais.
+Si cette stagnation continue assez longtemps, l'interface garde le meilleur essai courant et relance automatiquement le solveur depuis le `Minimum de générations` saisi, puis `minimum + 1`, puis `minimum + 2`. Elle teste au maximum 8 valeurs au total, essai initial inclus. Le statut final résume les stats des meilleurs essais.
 
 ## Nettoyage
 

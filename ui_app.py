@@ -54,7 +54,6 @@ ui = {
     "normal_controls_frame": None,
     "resolution_controls_frame": None,
     "mode_var": None,
-    "steps_entry": None,
     "auto_min_steps_entry": None,
     "start_solver_button": None,
     "normal_play_button": None,
@@ -254,13 +253,7 @@ def creer_interface(board):
     resolution_frame = tk.Frame(controls, bg=UI_BG)
     ui["resolution_controls_frame"] = resolution_frame
     creer_titre_section(resolution_frame, "Résolution")
-    tk.Label(resolution_frame, text="Générations", bg=UI_BG, fg=TEXT_COLOR, anchor="w").pack(fill="x", padx=8)
-    entree = tk.Entry(resolution_frame, justify="center")
-    entree.insert(0, str(state.k_inverse))
-    entree.pack(fill="x", padx=8, pady=(2, 8))
-    ui["steps_entry"] = entree
-
-    tk.Label(resolution_frame, text="Min auto-steps (vide = 1)", bg=UI_BG, fg=TEXT_COLOR, anchor="w").pack(fill="x", padx=8)
+    tk.Label(resolution_frame, text="Minimum de générations (vide = 1)", bg=UI_BG, fg=TEXT_COLOR, anchor="w").pack(fill="x", padx=8)
     entree_min = tk.Entry(resolution_frame, justify="center")
     entree_min.pack(fill="x", padx=8, pady=(2, 8))
     ui["auto_min_steps_entry"] = entree_min
@@ -288,7 +281,7 @@ def creer_interface(board):
 
     ui["status_label"] = tk.Label(
         panel,
-        text="Dessinez une cible, choisissez le nombre de générations, puis lancez le solveur.",
+        text="Dessinez une cible, choisissez le minimum de générations si besoin, puis lancez le solveur.",
         bg=UI_BG,
         fg=DISCREET_TEXT,
         justify="left",
@@ -459,29 +452,7 @@ def texte_status():
     if state.resultat is not None:
         return "Meilleure grille initiale disponible. Inspectez le résultat ou l'évolution."
 
-    return "Mode résolution : dessinez la cible finale, choisissez les générations, puis lancez le solveur."
-
-
-def lire_nb_etapes_depuis_interface(board):
-    entree = ui.get("steps_entry")
-    if entree is None or not entree.winfo_exists():
-        return True
-
-    texte = entree.get().strip()
-    try:
-        valeur = int(texte)
-    except ValueError:
-        board.console("Nombre d'étapes invalide :", texte)
-        valeur = state.k_inverse
-
-    if valeur < 1:
-        board.console("Le nombre d'étapes doit être au moins 1.")
-        valeur = state.k_inverse
-
-    state.k_inverse = max(1, valeur)
-    entree.delete(0, tk.END)
-    entree.insert(0, str(state.k_inverse))
-    return valeur >= 1
+    return "Mode résolution : dessinez la cible finale, choisissez le minimum de générations si besoin, puis lancez le solveur."
 
 
 def lire_min_auto_steps_depuis_interface(board):
@@ -498,13 +469,13 @@ def lire_min_auto_steps_depuis_interface(board):
     try:
         valeur = int(texte)
     except ValueError:
-        board.console("Minimum auto-steps invalide :", texte)
+        board.console("Minimum de générations invalide :", texte)
         state.auto_steps_min = None
         entree.delete(0, tk.END)
         return False
 
     if valeur < 1:
-        board.console("Le minimum auto-steps doit être vide ou supérieur à 0.")
+        board.console("Le minimum de générations doit être vide ou supérieur à 0.")
         state.auto_steps_min = None
         entree.delete(0, tk.END)
         return False
@@ -516,10 +487,7 @@ def lire_min_auto_steps_depuis_interface(board):
 
 
 def synchroniser_entree_etapes():
-    entree = ui.get("steps_entry")
-    if entree is not None and entree.winfo_exists():
-        entree.delete(0, tk.END)
-        entree.insert(0, str(state.k_inverse))
+    return
 
 
 def afficher_vue(board, vue):
@@ -608,7 +576,7 @@ def afficher_infos(board):
     afficher_ligne(
         board,
         0,
-        "Mode : {} | Vue : {} | générations : {} | cellules cible : {}".format(
+        "Mode : {} | Vue : {} | génération testée : {} | cellules cible : {}".format(
             mode,
             libelle_vue(state.vue).upper(),
             state.k_inverse,
@@ -628,9 +596,9 @@ def afficher_infos(board):
                 len(state.evolution) - 1,
             )
         else:
-            ligne_1 = "Dessinez la grille finale souhaitée, réglez les générations, puis lancez le solveur."
+            ligne_1 = "Dessinez la grille finale souhaitée, réglez le minimum de générations si besoin, puis lancez le solveur."
         afficher_ligne(board, 1, ligne_1)
-        afficher_ligne(board, 2, "Touches : S résoudre | V résultat/initiale | T cible | P population | X effacer | flèches générations")
+        afficher_ligne(board, 2, "Touches : S résoudre | V résultat/initiale | T cible | P population | X effacer")
 
         if state.solveur is not None:
             s = state.solveur
@@ -984,10 +952,6 @@ def lancer_ou_arreter_solveur(board):
 
     if state.mode_app != "resolution":
         return
-    if not lire_nb_etapes_depuis_interface(board):
-        rafraichir_plateau(board)
-        afficher_infos(board)
-        return
     if not lire_min_auto_steps_depuis_interface(board):
         rafraichir_plateau(board)
         afficher_infos(board)
@@ -998,7 +962,7 @@ def lancer_ou_arreter_solveur(board):
 
     state.recommendation_steps = ""
     reinitialiser_auto_steps()
-    lire_min_auto_steps_depuis_interface(board)
+    state.k_inverse = state.auto_steps_min or 1
     state.auto_steps_actif = True
     state.auto_steps_depart = state.k_inverse
     state.evolution_active = False
@@ -1127,26 +1091,6 @@ def gestion_clavier(board, event):
             lancer_ou_arreter_solveur(board)
         elif t == "p":
             ouvrir_fenetre_population(board)
-        elif t in ("up", "right"):
-            state.k_inverse += 1
-            synchroniser_entree_etapes()
-            state.resultat = None
-            state.solveur = None
-            state.solveur_actif = False
-            reinitialiser_auto_steps()
-            state.evolution = None
-            state.evolution_active = False
-            state.evolution_id += 1
-        elif t in ("down", "left"):
-            state.k_inverse = max(1, state.k_inverse - 1)
-            synchroniser_entree_etapes()
-            state.resultat = None
-            state.solveur = None
-            state.solveur_actif = False
-            reinitialiser_auto_steps()
-            state.evolution = None
-            state.evolution_active = False
-            state.evolution_id += 1
         elif t == "escape":
             state.solveur_actif = False
             state.evolution_active = False
@@ -1505,7 +1449,7 @@ def initialiser(board):
     rafraichir_plateau(board)
     afficher_infos(board)
     board.console("Chasseur de motifs du jeu de la vie prêt.")
-    board.console("Mode résolution : dessinez une cible, choisissez les générations, puis lancez le solveur.")
+    board.console("Mode résolution : dessinez une cible, choisissez le minimum de générations si besoin, puis lancez le solveur.")
 
 
 def run_app(eniseboard):
