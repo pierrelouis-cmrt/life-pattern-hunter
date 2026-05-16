@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Point d'entrée principal du chasseur de motifs du Jeu de la vie."""
+"""Point d'entrée de la version simplifiée du chasseur de motifs."""
 
 try:
     from eniseboard import eniseboard
 except ImportError:
     eniseboard = None
 
-from ui_app import run_app
+try:
+    from .ui_app import run_app
+except ImportError:
+    from ui_app import run_app
 
 
 def main():

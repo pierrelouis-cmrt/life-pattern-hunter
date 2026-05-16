@@ -1,7 +1,7 @@
 """Règles normales du jeu de la vie de Conway.
 
-Ce fichier est dupliqué dans ``simplified/`` pour que cette version reste
-autonome et comparable au projet principal sans dépendre de ses modules.
+Ce module ne connaît ni Tkinter, ni Eniseboard, ni l'algorithme génétique.
+Il sert de socle testable pour les deux modes de l'application.
 """
 
 ROWS = 24
@@ -91,4 +91,3 @@ def historique_evolution(grille_initiale, nb_generations, bords_toriques=TOROIDA
         historique.append(copier_grille(courant))
 
     return historique
-

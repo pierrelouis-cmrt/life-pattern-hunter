@@ -1,8 +1,4 @@
-"""Règles normales du jeu de la vie de Conway.
-
-Ce module ne connaît ni Tkinter, ni Eniseboard, ni l'algorithme génétique.
-Il sert de socle testable pour les deux modes de l'application.
-"""
+"""Règles normales du jeu de la vie de Conway."""
 
 ROWS = 24
 COLS = 24

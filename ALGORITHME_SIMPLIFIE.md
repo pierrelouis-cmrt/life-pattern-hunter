@@ -152,18 +152,3 @@ tant que la recherche n'est pas terminée :
 
     population = nouvelle_population
 ```
-
-## Ce qui est volontairement absent
-
-Cette version ne contient pas :
-
-- cache ;
-- nettoyage ;
-- amélioration locale ;
-- graines pour petites formes ;
-- carte de distance ;
-- relance complexe en cas de stagnation ;
-- essai automatique de plusieurs valeurs de `X`.
-
-Le compromis est volontaire : on réintroduit seulement ce qui améliore fortement
-les résultats avec peu de code.

@@ -96,14 +96,43 @@ Comme `E <= P`, cette partie ne domine pas le tri.
 La génération suivante contient :
 
 - `E` copies d'élites ;
-- `P - E` enfants créés par croisement et mutation.
+- quelques nouveaux individus aléatoires ;
+- le reste en enfants créés par croisement et mutation.
 
 Copier les élites coûte `O(E * N)`, parce qu'une élite est une grille complète.
-Créer un nouvel individu aléatoire coûte `O(Z)`. Croiser deux parents coûte
-`O(Z)`, car on choisit une cellule parentale seulement dans la zone active.
-Muter un enfant coûte aussi `O(Z)`.
 
-Donc, pour remplir une population complète :
+Pour le reste, on travaille seulement dans la zone active :
+
+- créer un nouvel individu aléatoire coûte `O(Z)` ;
+- croiser deux parents coûte `O(Z)` ;
+- muter un enfant coûte `O(Z)`.
+
+Pour rendre le calcul explicite, appelons `A` le nombre de nouveaux individus
+aléatoires ajoutés à chaque génération. Après les élites, il reste `P - E`
+places à remplir :
+
+- les `A` nouveaux individus coûtent `O(A * Z)` ;
+- les `P - E - A` enfants coûtent `O((P - E - A) * Z)`.
+
+La partie active coûte donc :
+
+```text
+O(A * Z + (P - E - A) * Z)
+```
+
+Les deux termes utilisent la même zone active. On peut les regrouper :
+
+```text
+O((P - E) * Z)
+```
+
+En ajoutant la copie des élites :
+
+```text
+construction = O(E * N + (P - E) * Z)
+```
+
+Et comme `P - E <= P`, on peut écrire la forme plus simple :
 
 ```text
 construction = O(E * N + P * Z)
@@ -145,25 +174,3 @@ Forme dominante :
 ```text
 coût total ≈ O(G * P * X * N)
 ```
-
-## Mémoire
-
-La mémoire principale contient la population. Chaque individu est une grille de
-`N` cellules et il y a `P` individus.
-
-```text
-population = O(P * N)
-```
-
-Pendant l'évaluation, on stocke aussi les résultats et quelques copies des
-meilleurs individus. Cela reste proportionnel à la taille de la population :
-
-```text
-mémoire totale = O(P * N)
-```
-
-Il n'y a pas de cache. La mémoire ne dépend donc pas du nombre d'individus déjà
-vus dans les générations précédentes.
-
-La zone active ajoute seulement quelques nombres : ses bornes et sa taille. Cela
-reste `O(1)`.

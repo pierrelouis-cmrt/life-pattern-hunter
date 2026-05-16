@@ -1,13 +1,9 @@
-"""État applicatif de la version simplifiée."""
+"""État applicatif partagé par l'interface."""
 
 from dataclasses import dataclass, field
 
-try:
-    from .life_rules import COLS, ROWS, nouvelle_grille
-    from .simple_genetic_algorithm import SimpleSearchConfig
-except ImportError:
-    from life_rules import COLS, ROWS, nouvelle_grille
-    from simple_genetic_algorithm import SimpleSearchConfig
+from life_rules import COLS, ROWS, nouvelle_grille
+from reverse_search_algorithm import SearchConfig
 
 
 DELAI_ANIMATION_MS = 180
@@ -33,8 +29,17 @@ class AppState:
     evolution_index: int = 0
     evolution_active: bool = False
     evolution_id: int = 0
-    message_recherche: str = ""
-    config_recherche: SimpleSearchConfig = field(default_factory=SimpleSearchConfig)
+    recommendation_steps: str = ""
+    auto_steps_actif: bool = False
+    auto_steps_queue: list = field(default_factory=list)
+    auto_steps_tentes: list = field(default_factory=list)
+    auto_steps_resultats: list = field(default_factory=list)
+    auto_steps_depart: int = 0
+    auto_steps_min: int | None = None
+    auto_steps_plan: list = field(default_factory=list)
+    auto_steps_max_essais: int = 8
+    auto_steps_best: object | None = None
+    config_recherche: SearchConfig = field(default_factory=SearchConfig)
 
 
 def nouvel_etat():

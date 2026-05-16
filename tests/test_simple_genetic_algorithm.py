@@ -1,8 +1,8 @@
 import random
 import unittest
 
-from simplified.life_rules import nouvelle_grille
-from simplified.simple_genetic_algorithm import (
+from life_rules import nouvelle_grille
+from simple_genetic_algorithm import (
     SimpleSearchConfig,
     avancer_solveur_une_generation,
     calculer_zone_recherche,
