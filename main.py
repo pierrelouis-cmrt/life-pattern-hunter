@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Point d'entrée historique du chasseur de motifs du jeu de la vie."""
+"""Point d'entrée principal du chasseur de motifs du Jeu de la vie."""
 
 try:
     from eniseboard import eniseboard
@@ -11,7 +11,7 @@ from ui_app import run_app
 
 def main():
     if eniseboard is None:
-        raise SystemExit("eniseboard n'est pas installe. Lancez: pip install eniseboard")
+        raise SystemExit("eniseboard n'est pas installé. Lancez : pip install eniseboard")
 
     run_app(eniseboard)
 

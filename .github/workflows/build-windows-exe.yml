@@ -45,7 +45,7 @@ jobs:
             --collect-all eniseboard `
             --hidden-import pkg_resources `
             --collect-all pkg_resources `
-            reverse-search.py
+            main.py
 
       - name: Validate executable output
         shell: pwsh

@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 import argparse
+import pathlib
 import random
+import sys
 from dataclasses import dataclass
+
+RACINE_PROJET = pathlib.Path(__file__).resolve().parents[2]
+if str(RACINE_PROJET) not in sys.path:
+    sys.path.insert(0, str(RACINE_PROJET))
 
 from life_rules import (
     COLS,
@@ -193,7 +199,7 @@ def parse_args():
         description="Référence de comparaison par force brute aléatoire pour la recherche inverse du jeu de la vie."
     )
     parser.add_argument("--target", "--cible", choices=("block", "blinker", "glider"), default="block", help="motif cible à chercher")
-    parser.add_argument("--steps", "--generations", type=int, default=5, help="nombre de générations à simuler")
+    parser.add_argument("--steps", "--generations", type=int, default=5, help="nombre de passages du Jeu de la vie à simuler")
     parser.add_argument("--runs", "--essais", type=int, default=5, help="nombre d'essais indépendants")
     parser.add_argument("--max-iterations", "--iterations-max", type=int, default=NB_GENERATIONS_GENETIQUES_MAX, help="nombre maximal d'itérations par essai")
     parser.add_argument(
@@ -225,7 +231,7 @@ def main():
 
     print("Référence de comparaison par force brute aléatoire")
     print("Cible :", args.target)
-    print("Générations :", args.steps)
+    print("Passages du Jeu de la vie :", args.steps)
     print("Essais :", args.runs)
     print("Itérations maximales par essai :", args.max_iterations)
     print("Candidats par itération :", args.samples_per_iteration)

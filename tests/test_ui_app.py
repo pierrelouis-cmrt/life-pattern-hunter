@@ -78,6 +78,10 @@ class UiAppTests(unittest.TestCase):
 
         self.assertEqual(1, ui_app.state.cible[0][0])
 
+    def test_population_window_feature_is_removed(self):
+        self.assertNotIn("population_button", ui_app.ui)
+        self.assertFalse(hasattr(ui_app, "ouvrir_fenetre_population"))
+
     def test_recommendation_lists_concrete_steps_for_tiny_stagnating_target(self):
         ui_app.state.k_inverse = 9
         self.petite_cible()
@@ -147,16 +151,19 @@ class UiAppTests(unittest.TestCase):
         self.assertTrue(ui_app.state.solveur_actif)
         self.assertIsNotNone(ui_app.state.solveur)
 
-    def test_auto_steps_respects_minimum_and_max_attempts(self):
+    def test_auto_steps_respects_explicit_range(self):
         self.petite_cible()
         ui_app.state.k_inverse = 5
-        ui_app.state.auto_steps_min = 3
+        ui_app.state.auto_steps_plan = [3, 4, 5, 6]
         ui_app.state.auto_steps_tentes = [5]
-        ui_app.state.auto_steps_max_essais = 4
 
         steps = ui_app.generer_steps_alternatifs()
 
         self.assertEqual([3, 4, 6], steps)
+
+    def test_steps_entry_accepts_single_value_or_range(self):
+        self.assertEqual([2], ui_app.parser_steps_interface("2"))
+        self.assertEqual([2, 3, 4, 5], ui_app.parser_steps_interface("2-5"))
 
     def test_auto_steps_records_stats_and_formats_them(self):
         self.petite_cible()

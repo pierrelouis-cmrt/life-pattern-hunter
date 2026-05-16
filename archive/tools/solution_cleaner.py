@@ -2,6 +2,12 @@
 """Nettoie une grille initiale candidate sans dégrader sa cible finale."""
 
 import argparse
+import pathlib
+import sys
+
+RACINE_PROJET = pathlib.Path(__file__).resolve().parents[2]
+if str(RACINE_PROJET) not in sys.path:
+    sys.path.insert(0, str(RACINE_PROJET))
 
 from life_rules import nombre_cellules_vivantes
 from reverse_search_algorithm import (
@@ -41,7 +47,7 @@ def parse_args():
     )
     parser.add_argument("--initial", required=True, help="fichier ASCII de la grille initiale candidate")
     parser.add_argument("--target", "--cible", required=True, help="fichier ASCII de la cible finale")
-    parser.add_argument("--steps", "--generations", type=int, required=True, help="nombre de générations à simuler")
+    parser.add_argument("--steps", "--generations", type=int, required=True, help="nombre de passages du Jeu de la vie à simuler")
     parser.add_argument("--output", "--sortie", help="fichier où écrire la grille nettoyée")
     return parser.parse_args()
 

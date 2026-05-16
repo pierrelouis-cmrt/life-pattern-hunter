@@ -36,6 +36,7 @@ class AppState:
     auto_steps_resultats: list = field(default_factory=list)
     auto_steps_depart: int = 0
     auto_steps_min: int | None = None
+    auto_steps_plan: list = field(default_factory=list)
     auto_steps_max_essais: int = 8
     auto_steps_best: object | None = None
     config_recherche: SearchConfig = field(default_factory=SearchConfig)
