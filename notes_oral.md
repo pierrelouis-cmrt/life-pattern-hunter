@@ -64,9 +64,8 @@ Les règles sont locales, mais elles peuvent produire des comportements globaux 
 
 **Illustration conseillée :**
 
-```md
-![Transition GoL](archive/old/assets/gol_visuals/gol_transition_blinker.png)
-```
+Schéma possible : trois petites grilles montrant un motif qui change d'une
+génération à la suivante.
 
 **Code possible :**
 
@@ -180,10 +179,8 @@ Une génération du Jeu de la vie correspond à une évolution de la grille. Une
 
 **Illustrations conseillées :**
 
-```md
-![Population](archive/old/assets/gol_visuals/population_candidates.png)
-![Cycle génétique](archive/old/assets/gol_visuals/genetic_cycle.png)
-```
+Schémas possibles : plusieurs grilles candidates côte à côte, puis une boucle
+population -> évaluation -> sélection -> nouvelle population.
 
 ## Diapo 7 - Score et zone active
 
@@ -215,9 +212,8 @@ Cette zone réduit l'espace de recherche. Elle évite aussi d'ajouter du bruit l
 
 **Illustration conseillée :**
 
-```md
-![Score](archive/old/assets/gol_visuals/error_score.png)
-```
+Schéma possible : une cible, un résultat simulé, puis les cellules manquantes
+et les cellules en trop colorées différemment.
 
 ## Diapo 8 - Croisement, mutation et pseudo-code
 
@@ -255,10 +251,8 @@ L'ajout d'individus aléatoires limite la stagnation de la population.
 
 **Illustrations conseillées :**
 
-```md
-![Croisement](archive/old/assets/gol_visuals/parents_child.png)
-![Mutation](archive/old/assets/gol_visuals/mutation.png)
-```
+Schémas possibles : deux parents qui donnent un enfant, puis quelques cellules
+qui changent d'état après mutation.
 
 ## Diapo 9 - Complexité théorique
 
@@ -328,7 +322,7 @@ nb_generations_max = 420
 Évaluation :
 
 ```python
-resultat = simuler(individu, steps, config.bords_toriques)
+resultat = simuler(individu, passages, config.bords_toriques)
 erreur = erreur_par_rapport_a_cible(resultat, cible, config)
 ```
 
@@ -339,22 +333,22 @@ elites = evaluations[:config.nb_elites]
 nouvelle = [copier_grille(evaluation.individu) for evaluation in elites]
 
 while len(nouvelle) < config.taille_population:
-    parent_a, parent_b = choisir_parents_elites(elites, rng)
-    enfant = croiser(parent_a, parent_b, config, rng, zone)
-    nouvelle.append(muter(enfant, config, rng, zone, taux_mutation))
+    parent_a, parent_b = choisir_parents_elites(elites, hasard)
+    enfant = croiser(parent_a, parent_b, config, hasard, zone)
+    nouvelle.append(muter(enfant, config, hasard, zone, taux_mutation))
 ```
 
 **À dire :**
 
-L'algorithme est implémenté dans `simple_genetic_algorithm.py`.
+L'algorithme est implémenté dans `recherche_genetique.py`.
 
-La classe `SimpleSearchConfig` regroupe les paramètres de recherche.
+La classe `ConfigurationRecherche` regroupe les paramètres de recherche.
 
 La fonction `evaluer_individu` simule un individu, compare le résultat à la cible, puis calcule son score.
 
 La fonction `construire_population_suivante` conserve les élites, ajoute des individus aléatoires, puis crée les enfants par croisement et mutation.
 
-Cette version est volontairement simple. Elle ne contient pas de cache, pas d'amélioration locale et pas de nettoyage final.
+Le code reste volontairement lisible. Il ne contient pas de cache, pas d'amélioration locale et pas de nettoyage final.
 
 Le but est d'obtenir un algorithme lisible, testable et cohérent avec l'analyse de complexité.
 

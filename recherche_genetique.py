@@ -1,27 +1,27 @@
-"""Algorithme génétique inverse simplifié.
+"""Recherche inverse par population pour le Jeu de la vie.
 
-Cette version reste volontairement courte, mais elle garde trois aides à fort
-rendement : zone active autour de la cible, score pondéré et anti-stagnation
-simple par mutation adaptative plus nouveaux individus aléatoires.
+Le module cherche une grille de départ qui donne une cible après un nombre de
+passages choisi. Il reste volontairement lisible : population, score, élites,
+croisement, mutation et quelques nouveaux candidats à chaque génération.
 """
 
 from dataclasses import dataclass, field
 import random
 
 try:
-    from .life_rules import (
-        COLS,
-        ROWS,
-        TOROIDAL_BORDERS,
+    from .regles_jeudelavie import (
+        BORDS_TORIQUES,
+        NB_COLONNES,
+        NB_LIGNES,
         copier_grille,
         nouvelle_grille,
         simuler,
     )
 except ImportError:
-    from life_rules import (
-        COLS,
-        ROWS,
-        TOROIDAL_BORDERS,
+    from regles_jeudelavie import (
+        BORDS_TORIQUES,
+        NB_COLONNES,
+        NB_LIGNES,
         copier_grille,
         nouvelle_grille,
         simuler,
@@ -29,10 +29,12 @@ except ImportError:
 
 
 @dataclass
-class SimpleSearchConfig:
-    rows: int = ROWS
-    cols: int = COLS
-    bords_toriques: bool = TOROIDAL_BORDERS
+class ConfigurationRecherche:
+    """Réunit les réglages principaux de la recherche."""
+
+    lignes: int = NB_LIGNES
+    colonnes: int = NB_COLONNES
+    bords_toriques: bool = BORDS_TORIQUES
     marge_recherche: int = 3
     max_marge_recherche: int = 10
     taille_population: int = 120
@@ -48,6 +50,8 @@ class SimpleSearchConfig:
 
 @dataclass
 class Evaluation:
+    """Résultat d'un candidat après simulation et comparaison avec la cible."""
+
     score_tri: float
     erreur: float
     exactitude: float
@@ -58,7 +62,9 @@ class Evaluation:
 
 
 @dataclass
-class GenerationSnapshot:
+class InstantGeneration:
+    """Résumé de la dernière génération utile pour l'affichage."""
+
     generation: int
     population_evaluee: list
     meilleur_global: Evaluation | None
@@ -68,14 +74,16 @@ class GenerationSnapshot:
 
 
 @dataclass
-class SolverState:
+class EtatSolveur:
+    """Mémoire interne de la recherche en cours."""
+
     cible: list
-    steps: int
-    config: SimpleSearchConfig
+    passages: int
+    config: ConfigurationRecherche
     zone: tuple
     densite_active: float
     population: list
-    rng: random.Random = field(default_factory=random.Random)
+    hasard: random.Random = field(default_factory=random.Random)
     generation: int = 0
     stagnation: int = 0
     meilleure_note_tri: float | None = None
@@ -83,12 +91,13 @@ class SolverState:
     meilleur_individu: list | None = None
     meilleur_resultat: list | None = None
     meilleur_score: float = 0.0
-    dernier_snapshot: GenerationSnapshot | None = None
+    dernier_snapshot: InstantGeneration | None = None
     termine: bool = False
     raison_arret: str = ""
 
 
 def valider_config(config):
+    """Vérifie les paramètres avant de lancer une recherche."""
     if config.taille_population < 2:
         raise ValueError("La population doit contenir au moins deux individus.")
     if config.nb_elites < 1:
@@ -112,49 +121,55 @@ def valider_config(config):
 
 
 def cellules_grille(config):
-    for i in range(config.rows):
-        for j in range(config.cols):
-            yield i, j
+    """Parcourt toutes les coordonnées de la grille."""
+    for ligne in range(config.lignes):
+        for colonne in range(config.colonnes):
+            yield ligne, colonne
 
 
 def cellules_zone(zone):
-    lmin, lmax, cmin, cmax = zone
-    for i in range(lmin, lmax + 1):
-        for j in range(cmin, cmax + 1):
-            yield i, j
+    """Parcourt les coordonnées d'une zone rectangulaire incluse dans la grille."""
+    ligne_min, ligne_max, colonne_min, colonne_max = zone
+    for ligne in range(ligne_min, ligne_max + 1):
+        for colonne in range(colonne_min, colonne_max + 1):
+            yield ligne, colonne
 
 
 def taille_zone(zone):
-    lmin, lmax, cmin, cmax = zone
-    return (lmax - lmin + 1) * (cmax - cmin + 1)
+    """Calcule le nombre de cellules couvertes par une zone."""
+    ligne_min, ligne_max, colonne_min, colonne_max = zone
+    return (ligne_max - ligne_min + 1) * (colonne_max - colonne_min + 1)
 
 
 def cellules_vivantes(grille, config):
+    """Liste les coordonnées des cellules vivantes."""
     return [
-        (i, j)
-        for i in range(config.rows)
-        for j in range(config.cols)
-        if grille[i][j] == 1
+        (ligne, colonne)
+        for ligne in range(config.lignes)
+        for colonne in range(config.colonnes)
+        if grille[ligne][colonne] == 1
     ]
 
 
-def calculer_zone_recherche(cible, steps, config):
+def calculer_zone_recherche(cible, passages, config):
+    """Délimite la zone de travail autour des cellules dessinées."""
     vivantes = cellules_vivantes(cible, config)
     if not vivantes:
-        return (0, config.rows - 1, 0, config.cols - 1)
+        return (0, config.lignes - 1, 0, config.colonnes - 1)
 
-    lignes = [i for i, _ in vivantes]
-    colonnes = [j for _, j in vivantes]
-    marge = max(config.marge_recherche, min(config.max_marge_recherche, steps + 2))
+    lignes = [ligne for ligne, _ in vivantes]
+    colonnes = [colonne for _, colonne in vivantes]
+    marge = max(config.marge_recherche, min(config.max_marge_recherche, passages + 2))
     return (
         max(0, min(lignes) - marge),
-        min(config.rows - 1, max(lignes) + marge),
+        min(config.lignes - 1, max(lignes) + marge),
         max(0, min(colonnes) - marge),
-        min(config.cols - 1, max(colonnes) + marge),
+        min(config.colonnes - 1, max(colonnes) + marge),
     )
 
 
 def densite_pour_zone(cible, zone, config):
+    """Choisit une densité de départ raisonnable pour la taille de la cible."""
     vivantes = len(cellules_vivantes(cible, config))
     if vivantes == 0:
         return config.densite_initiale
@@ -163,49 +178,61 @@ def densite_pour_zone(cible, zone, config):
     return min(0.35, max(0.04, densite_cible * 2.0, config.densite_initiale * 0.35))
 
 
-def grille_aleatoire(config, rng, zone=None, densite=None):
-    zone = zone or (0, config.rows - 1, 0, config.cols - 1)
+def grille_aleatoire(config, hasard, zone=None, densite=None):
+    """Crée un candidat aléatoire dans la zone de recherche."""
+    zone = zone or (0, config.lignes - 1, 0, config.colonnes - 1)
     densite = config.densite_initiale if densite is None else densite
-    grille = nouvelle_grille(0, config.rows, config.cols)
-    for i, j in cellules_zone(zone):
-        if rng.random() < densite:
-            grille[i][j] = 1
+    grille = nouvelle_grille(0, config.lignes, config.colonnes)
+
+    for ligne, colonne in cellules_zone(zone):
+        if hasard.random() < densite:
+            grille[ligne][colonne] = 1
+
     return grille
 
 
-def creer_population_initiale(config, rng, zone=None, densite=None):
+def creer_population_initiale(config, hasard, zone=None, densite=None):
+    """Prépare la première population de candidats."""
     valider_config(config)
-    return [grille_aleatoire(config, rng, zone, densite) for _ in range(config.taille_population)]
+    return [
+        grille_aleatoire(config, hasard, zone, densite)
+        for _ in range(config.taille_population)
+    ]
 
 
 def erreur_par_rapport_a_cible(resultat, cible, config):
+    """Mesure l'écart entre une simulation et la cible."""
     erreur = 0
-    for i, j in cellules_grille(config):
-        if cible[i][j] == 1 and resultat[i][j] == 0:
+    for ligne, colonne in cellules_grille(config):
+        if cible[ligne][colonne] == 1 and resultat[ligne][colonne] == 0:
             erreur += config.penalite_faux_negatif
-        elif cible[i][j] == 0 and resultat[i][j] == 1:
+        elif cible[ligne][colonne] == 0 and resultat[ligne][colonne] == 1:
             erreur += config.penalite_faux_positif
     return erreur
 
 
 def compter_differences(resultat, cible, config):
+    """Compte simplement les cases différentes entre deux grilles."""
     differences = 0
-    for i, j in cellules_grille(config):
-        if resultat[i][j] != cible[i][j]:
+    for ligne, colonne in cellules_grille(config):
+        if resultat[ligne][colonne] != cible[ligne][colonne]:
             differences += 1
     return differences
 
 
 def score_exactitude(resultat, cible, config):
-    total = config.rows * config.cols
+    """Transforme les différences en pourcentage de ressemblance."""
+    total = config.lignes * config.colonnes
     if total == 0:
         return 100.0
+
     differences = compter_differences(resultat, cible, config)
     return 100.0 * (total - differences) / total
 
 
-def evaluer_individu(individu, cible, steps, config, role="candidat"):
-    resultat = simuler(individu, steps, config.bords_toriques)
+def evaluer_individu(individu, cible, passages, config, role="candidat"):
+    """Simule un candidat puis calcule son score."""
+    resultat = simuler(individu, passages, config.bords_toriques)
     erreur = erreur_par_rapport_a_cible(resultat, cible, config)
     exactitude = score_exactitude(resultat, cible, config)
     return Evaluation(
@@ -218,63 +245,89 @@ def evaluer_individu(individu, cible, steps, config, role="candidat"):
     )
 
 
-def evaluer_population(population, cible, steps, config):
+def evaluer_population(population, cible, passages, config):
+    """Évalue toute la population et place les meilleurs en premier."""
     evaluations = [
-        evaluer_individu(individu, cible, steps, config)
+        evaluer_individu(individu, cible, passages, config)
         for individu in population
     ]
     evaluations.sort(key=lambda item: item.score_tri)
+
     for rang, evaluation in enumerate(evaluations, start=1):
         evaluation.rang = rang
         if rang <= config.nb_elites:
             evaluation.role = "elite"
+
     return evaluations
 
 
-def croiser(parent_a, parent_b, config, rng, zone=None):
-    zone = zone or (0, config.rows - 1, 0, config.cols - 1)
-    enfant = nouvelle_grille(0, config.rows, config.cols)
-    for i, j in cellules_zone(zone):
-        enfant[i][j] = parent_a[i][j] if rng.random() < 0.5 else parent_b[i][j]
+def croiser(parent_a, parent_b, config, hasard, zone=None):
+    """Construit un enfant en mélangeant deux parents cellule par cellule."""
+    zone = zone or (0, config.lignes - 1, 0, config.colonnes - 1)
+    enfant = nouvelle_grille(0, config.lignes, config.colonnes)
+
+    for ligne, colonne in cellules_zone(zone):
+        enfant[ligne][colonne] = (
+            parent_a[ligne][colonne]
+            if hasard.random() < 0.5
+            else parent_b[ligne][colonne]
+        )
+
     return enfant
 
 
-def muter(individu, config, rng, zone=None, taux_mutation=None):
-    zone = zone or (0, config.rows - 1, 0, config.cols - 1)
+def muter(individu, config, hasard, zone=None, taux_mutation=None):
+    """Inverse parfois des cellules pour garder de la variété."""
+    zone = zone or (0, config.lignes - 1, 0, config.colonnes - 1)
     taux = config.taux_mutation if taux_mutation is None else taux_mutation
-    for i, j in cellules_zone(zone):
-        if rng.random() < taux:
-            individu[i][j] = 1 - individu[i][j]
+
+    for ligne, colonne in cellules_zone(zone):
+        if hasard.random() < taux:
+            individu[ligne][colonne] = 1 - individu[ligne][colonne]
+
     return individu
 
 
-def choisir_parents_elites(elites, rng):
+def choisir_parents_elites(elites, hasard):
+    """Choisit deux bons parents pour créer un nouvel enfant."""
     if len(elites) == 1:
         return elites[0].individu, elites[0].individu
-    parent_a, parent_b = rng.sample(elites, 2)
+
+    parent_a, parent_b = hasard.sample(elites, 2)
     return parent_a.individu, parent_b.individu
 
 
-def construire_population_suivante(evaluations, config, rng, zone=None, densite=None, taux_mutation=None):
-    zone = zone or (0, config.rows - 1, 0, config.cols - 1)
+def construire_population_suivante(
+    evaluations,
+    config,
+    hasard,
+    zone=None,
+    densite=None,
+    taux_mutation=None,
+):
+    """Prépare la population suivante à partir des meilleurs candidats."""
+    zone = zone or (0, config.lignes - 1, 0, config.colonnes - 1)
     densite = config.densite_initiale if densite is None else densite
     taux_mutation = config.taux_mutation if taux_mutation is None else taux_mutation
     elites = evaluations[:config.nb_elites]
+
+    # Les élites sont recopiées telles quelles pour conserver le meilleur acquis.
     nouvelle = [copier_grille(evaluation.individu) for evaluation in elites]
     nb_nouveaux = int(config.taille_population * config.fraction_nouveaux_aleatoires)
 
     while len(nouvelle) < config.nb_elites + nb_nouveaux and len(nouvelle) < config.taille_population:
-        nouvelle.append(grille_aleatoire(config, rng, zone, densite))
+        nouvelle.append(grille_aleatoire(config, hasard, zone, densite))
 
     while len(nouvelle) < config.taille_population:
-        parent_a, parent_b = choisir_parents_elites(elites, rng)
-        enfant = croiser(parent_a, parent_b, config, rng, zone)
-        nouvelle.append(muter(enfant, config, rng, zone, taux_mutation))
+        parent_a, parent_b = choisir_parents_elites(elites, hasard)
+        enfant = croiser(parent_a, parent_b, config, hasard, zone)
+        nouvelle.append(muter(enfant, config, hasard, zone, taux_mutation))
 
     return nouvelle
 
 
 def copier_evaluation(evaluation, role=None):
+    """Copie une évaluation pour l'affichage sans garder de référence fragile."""
     return Evaluation(
         evaluation.score_tri,
         evaluation.erreur,
@@ -287,8 +340,10 @@ def copier_evaluation(evaluation, role=None):
 
 
 def evaluation_meilleur_global(solveur):
+    """Expose le meilleur candidat trouvé depuis le début."""
     if solveur.meilleur_individu is None:
         return None
+
     return Evaluation(
         solveur.meilleure_note_tri,
         solveur.meilleure_erreur,
@@ -301,6 +356,7 @@ def evaluation_meilleur_global(solveur):
 
 
 def enregistrer_meilleur_global(solveur, evaluation):
+    """Met à jour le meilleur candidat si la génération fait mieux."""
     if solveur.meilleure_note_tri is not None and evaluation.score_tri >= solveur.meilleure_note_tri:
         solveur.stagnation += 1
         return
@@ -314,12 +370,14 @@ def enregistrer_meilleur_global(solveur, evaluation):
 
 
 def taux_mutation_effectif(solveur):
+    """Augmente doucement la mutation quand le score ne progresse plus."""
     multiplicateur = 1 + min(5, solveur.stagnation // 20)
     return min(solveur.config.taux_mutation_max, solveur.config.taux_mutation * multiplicateur)
 
 
 def enregistrer_snapshot(solveur, evaluations, taux_mutation):
-    solveur.dernier_snapshot = GenerationSnapshot(
+    """Mémorise ce qu'il faut pour informer l'utilisateur dans l'interface."""
+    solveur.dernier_snapshot = InstantGeneration(
         generation=solveur.generation,
         population_evaluee=[copier_evaluation(e) for e in evaluations[:solveur.config.taille_population]],
         meilleur_global=evaluation_meilleur_global(solveur),
@@ -329,30 +387,33 @@ def enregistrer_snapshot(solveur, evaluations, taux_mutation):
     )
 
 
-def initialiser_solveur(grille_actuelle, cible, steps, config=None, rng=None):
+def initialiser_solveur(grille_actuelle, cible, passages, config=None, hasard=None):
+    """Crée un solveur prêt à avancer génération par génération."""
     del grille_actuelle
-    config = config or SimpleSearchConfig()
+    config = config or ConfigurationRecherche()
     valider_config(config)
-    rng = rng or random.Random()
-    zone = calculer_zone_recherche(cible, steps, config)
+    hasard = hasard or random.Random()
+    zone = calculer_zone_recherche(cible, passages, config)
     densite = densite_pour_zone(cible, zone, config)
-    return SolverState(
+
+    return EtatSolveur(
         cible=copier_grille(cible),
-        steps=steps,
+        passages=passages,
         config=config,
         zone=zone,
         densite_active=densite,
-        population=creer_population_initiale(config, rng, zone, densite),
-        rng=rng,
+        population=creer_population_initiale(config, hasard, zone, densite),
+        hasard=hasard,
     )
 
 
 def avancer_solveur_une_generation(solveur):
+    """Fait avancer la recherche d'une génération génétique."""
     if solveur.termine:
         return solveur
 
     config = solveur.config
-    evaluations = evaluer_population(solveur.population, solveur.cible, solveur.steps, config)
+    evaluations = evaluer_population(solveur.population, solveur.cible, solveur.passages, config)
     enregistrer_meilleur_global(solveur, evaluations[0])
     mutation = taux_mutation_effectif(solveur)
     enregistrer_snapshot(solveur, evaluations, mutation)
@@ -370,7 +431,7 @@ def avancer_solveur_une_generation(solveur):
     solveur.population = construire_population_suivante(
         evaluations,
         config,
-        solveur.rng,
+        solveur.hasard,
         solveur.zone,
         solveur.densite_active,
         mutation,
@@ -379,8 +440,9 @@ def avancer_solveur_une_generation(solveur):
     return solveur
 
 
-def lancer_recherche(grille_actuelle, cible, steps, config=None, rng=None):
-    solveur = initialiser_solveur(grille_actuelle, cible, steps, config, rng)
+def lancer_recherche(grille_actuelle, cible, passages, config=None, hasard=None):
+    """Lance une recherche complète et renvoie son état final."""
+    solveur = initialiser_solveur(grille_actuelle, cible, passages, config, hasard)
     while not solveur.termine:
         avancer_solveur_une_generation(solveur)
     return solveur

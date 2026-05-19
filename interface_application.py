@@ -1,19 +1,19 @@
-"""Interface Eniseboard/Tkinter de la version simplifiée."""
+"""Interface Eniseboard/Tkinter du chasseur de motifs."""
 
 import random
 import tkinter as tk
 from tkinter import ttk
 
 try:
-    from .app_state import (
+    from .etat_application import (
         DELAI_EVOLUTION_MS,
         DELAI_SOLVEUR_MS,
         NB_ITERATIONS_SOLVEUR_PAR_TICK,
         nouvel_etat,
     )
-    from .life_rules import (
-        COLS,
-        ROWS,
+    from .regles_jeudelavie import (
+        NB_COLONNES,
+        NB_LIGNES,
         copier_grille,
         grille_vide,
         historique_evolution,
@@ -21,21 +21,21 @@ try:
         nouvelle_grille,
         generation_suivante,
     )
-    from .simple_genetic_algorithm import (
+    from .recherche_genetique import (
         avancer_solveur_une_generation,
         initialiser_solveur,
         taille_zone,
     )
 except ImportError:
-    from app_state import (
+    from etat_application import (
         DELAI_EVOLUTION_MS,
         DELAI_SOLVEUR_MS,
         NB_ITERATIONS_SOLVEUR_PAR_TICK,
         nouvel_etat,
     )
-    from life_rules import (
-        COLS,
-        ROWS,
+    from regles_jeudelavie import (
+        NB_COLONNES,
+        NB_LIGNES,
         copier_grille,
         grille_vide,
         historique_evolution,
@@ -43,7 +43,7 @@ except ImportError:
         nouvelle_grille,
         generation_suivante,
     )
-    from simple_genetic_algorithm import (
+    from recherche_genetique import (
         avancer_solveur_une_generation,
         initialiser_solveur,
         taille_zone,
@@ -53,7 +53,6 @@ except ImportError:
 CELL_SIZE = 24
 
 BG_COLOR = "#f4f7fb"
-GRID_COLOR = "#d9e2ef"
 LIVE_COLOR = "#2563eb"
 TARGET_COLOR = "#111827"
 INITIAL_AND_TARGET = "#6d5dfc"
@@ -85,7 +84,7 @@ ui = {
     "normal_controls_frame": None,
     "resolution_controls_frame": None,
     "mode_var": None,
-    "steps_entry": None,
+    "passages_entry": None,
     "start_solver_button": None,
     "normal_play_button": None,
     "initial_button": None,
@@ -95,7 +94,6 @@ ui = {
     "next_button": None,
     "progress": None,
     "progress_label": None,
-    "status_label": None,
     "normal_step_button": None,
     "normal_random_button": None,
     "target_random_button": None,
@@ -107,10 +105,12 @@ ui = {
 
 
 def racine_tk(board):
+    """Récupère la fenêtre Tkinter créée par Eniseboard."""
     return getattr(board, "_eniseboard__root", None)
 
 
 def configurer_theme_ttk(root):
+    """Applique un thème sobre aux widgets Tkinter."""
     style = ttk.Style(root)
     if "clam" in style.theme_names():
         style.theme_use("clam")
@@ -133,7 +133,8 @@ def configurer_theme_ttk(root):
     style.configure("Horizontal.TProgressbar", troughcolor="#e5edf6", background=IMPORTANT_TEXT, bordercolor=BORDER_COLOR, lightcolor=IMPORTANT_TEXT, darkcolor=IMPORTANT_TEXT)
 
 
-def creer_bouton(parent, texte, commande, couleur=BUTTON_BG, couleur_texte=TEXT_COLOR):
+def creer_bouton(parent, texte, commande, couleur=BUTTON_BG):
+    """Crée un bouton avec le style correspondant à son rôle."""
     if couleur == PRIMARY_BUTTON_BG:
         style = "Primary.TButton"
     elif couleur == SECONDARY_BUTTON_BG:
@@ -149,6 +150,7 @@ def creer_bouton(parent, texte, commande, couleur=BUTTON_BG, couleur_texte=TEXT_
 
 
 def creer_section_simple(parent, titre):
+    """Crée un petit bloc de commandes dans le panneau latéral."""
     section = tk.Frame(
         parent,
         bg=CARD_BG,
@@ -172,6 +174,7 @@ def creer_section_simple(parent, titre):
 
 
 def fixer_taille_fenetre(root):
+    """Fixe une taille de départ confortable pour la fenêtre."""
     root.update_idletasks()
     largeur = max(root.winfo_reqwidth(), 980)
     hauteur = max(root.winfo_reqheight(), 760)
@@ -180,6 +183,7 @@ def fixer_taille_fenetre(root):
 
 
 def afficher_ligne(board, ligne, texte, couleur=TEXT_COLOR):
+    """Affiche une ligne d'information sous la grille."""
     labels = ui.get("info_labels") or []
     if 0 <= ligne < len(labels):
         label = labels[ligne]
@@ -196,6 +200,7 @@ def afficher_ligne(board, ligne, texte, couleur=TEXT_COLOR):
 
 
 def creer_panneau_infos(root):
+    """Prépare la zone qui affiche l'état courant de l'application."""
     ancien = ui.get("info_frame")
     if ancien is not None and ancien.winfo_exists():
         ancien.destroy()
@@ -236,6 +241,7 @@ def creer_panneau_infos(root):
 
 
 def creer_barre_modes(root, board):
+    """Installe les deux modes principaux au-dessus de la grille."""
     if not ui["main_rows_shifted"]:
         panel = ui.get("panel")
         for widget in root.grid_slaves():
@@ -257,8 +263,8 @@ def creer_barre_modes(root, board):
     ui["top_mode_frame"] = frame
     ui["mode_buttons"] = {}
 
-    ui["mode_var"] = tk.StringVar(value="Résolution")
-    for colonne, (texte, valeur) in enumerate((("Résolution inverse", "Résolution"), ("Simulation libre", "Jeu normal"))):
+    ui["mode_var"] = tk.StringVar(value="Recherche inverse")
+    for colonne, (texte, valeur) in enumerate((("Recherche inverse", "Recherche inverse"), ("Simulation libre", "Simulation libre"))):
         bouton = tk.Radiobutton(
             frame,
             text=texte,
@@ -288,7 +294,8 @@ def creer_barre_modes(root, board):
 
 
 def actualiser_boutons_mode():
-    valeur_active = ui["mode_var"].get() if ui.get("mode_var") is not None else "Résolution"
+    """Met en évidence le mode actuellement sélectionné."""
+    valeur_active = ui["mode_var"].get() if ui.get("mode_var") is not None else "Recherche inverse"
     for valeur, bouton in (ui.get("mode_buttons") or {}).items():
         if bouton is None or not bouton.winfo_exists():
             continue
@@ -306,6 +313,7 @@ def actualiser_boutons_mode():
 
 
 def definir_frame_visible(frame, visible):
+    """Affiche ou masque un bloc de commandes."""
     if frame is None or not frame.winfo_exists():
         return
     if visible:
@@ -316,18 +324,20 @@ def definir_frame_visible(frame, visible):
 
 
 def changer_mode(board):
+    """Passe de la recherche inverse à la simulation libre, ou l'inverse."""
     valeur = ui["mode_var"].get()
-    state.mode_app = "normal" if valeur == "Jeu normal" else "resolution"
+    state.mode_app = "normal" if valeur == "Simulation libre" else "resolution"
     state.lecture = False
     state.solveur_actif = False
-    state.evolution_active = False
-    state.evolution_id += 1
+    state.lecture_evolution = False
+    state.id_evolution += 1
     state.vue = "normal" if state.mode_app == "normal" else "edition"
     rafraichir_plateau(board)
     afficher_infos(board)
 
 
 def creer_interface(board):
+    """Construit toute l'interface autour de la grille Eniseboard."""
     root = racine_tk(board)
     if root is None:
         return
@@ -359,13 +369,12 @@ def creer_interface(board):
     normal_actions = creer_section_simple(normal_frame, "Simulation libre")
     ui["normal_play_button"] = creer_bouton(
         normal_actions,
-        "Lire l'évolution du Jeu de la vie",
+        "Lancer la simulation",
         lambda: lancer_ou_arreter_jeu_normal(board),
         PRIMARY_BUTTON_BG,
-        PRIMARY_BUTTON_FG,
     )
-    ui["normal_step_button"] = creer_bouton(normal_actions, "Avancer d'un seul passage n -> n+1", lambda: avancer_jeu_normal(board))
-    ui["normal_random_button"] = creer_bouton(normal_actions, "Créer une grille initiale aléatoire", lambda: remplir_initial_aleatoire(board), SECONDARY_BUTTON_BG)
+    ui["normal_step_button"] = creer_bouton(normal_actions, "Avancer d'un passage", lambda: avancer_jeu_normal(board))
+    ui["normal_random_button"] = creer_bouton(normal_actions, "Créer une grille de départ", lambda: remplir_initial_aleatoire(board), SECONDARY_BUTTON_BG)
 
     resolution_frame = tk.Frame(controls, bg=UI_BG)
     ui["resolution_controls_frame"] = resolution_frame
@@ -379,19 +388,18 @@ def creer_interface(board):
         font=("TkDefaultFont", 9, "bold"),
         anchor="w",
     ).pack(fill="x", pady=(8, 2))
-    entree_steps = ttk.Entry(cible_section, justify="center", style="TEntry")
-    entree_steps.insert(0, str(state.k_inverse))
-    entree_steps.pack(fill="x", pady=(0, 2), ipady=5)
-    ui["steps_entry"] = entree_steps
-    ui["target_random_button"] = creer_bouton(cible_section, "Créer une cible aléatoire", lambda: remplir_cible_aleatoire(board), SECONDARY_BUTTON_BG)
+    entree_passages = ttk.Entry(cible_section, justify="center", style="TEntry")
+    entree_passages.insert(0, str(state.k_inverse))
+    entree_passages.pack(fill="x", pady=(0, 2), ipady=5)
+    ui["passages_entry"] = entree_passages
+    ui["target_random_button"] = creer_bouton(cible_section, "Créer une cible", lambda: remplir_cible_aleatoire(board), SECONDARY_BUTTON_BG)
 
-    recherche_section = creer_section_simple(resolution_frame, "2. Recherche génétique simplifiée")
+    recherche_section = creer_section_simple(resolution_frame, "2. Recherche")
     ui["start_solver_button"] = creer_bouton(
         recherche_section,
-        "Trouver une grille initiale",
+        "Chercher une grille de départ",
         lambda: lancer_ou_arreter_solveur(board),
         PRIMARY_BUTTON_BG,
-        PRIMARY_BUTTON_FG,
     )
 
     ui["progress"] = ttk.Progressbar(
@@ -403,10 +411,10 @@ def creer_interface(board):
     ui["progress_label"] = tk.Label(recherche_section, text="En attente.", bg=CARD_BG, fg=DISCREET_TEXT, anchor="w", justify="left", wraplength=285)
     ui["progress_label"].pack(fill="x")
 
-    solution_section = creer_section_simple(resolution_frame, "3. Voir la solution")
-    ui["initial_button"] = creer_bouton(solution_section, "Voir la grille initiale trouvée", lambda: afficher_vue(board, "initial"))
-    ui["result_button"] = creer_bouton(solution_section, "Voir le résultat obtenu après évolution", lambda: afficher_vue(board, "resultat"))
-    ui["evolution_button"] = creer_bouton(solution_section, "Rejouer l'évolution initiale -> cible", lambda: lancer_ou_arreter_evolution(board), SECONDARY_BUTTON_BG)
+    solution_section = creer_section_simple(resolution_frame, "3. Résultat")
+    ui["initial_button"] = creer_bouton(solution_section, "Voir la grille de départ", lambda: afficher_vue(board, "initial"))
+    ui["result_button"] = creer_bouton(solution_section, "Voir la grille obtenue", lambda: afficher_vue(board, "resultat"))
+    ui["evolution_button"] = creer_bouton(solution_section, "Rejouer l'évolution", lambda: lancer_ou_arreter_evolution(board), SECONDARY_BUTTON_BG)
     ligne_navigation = tk.Frame(solution_section, bg=CARD_BG)
     ligne_navigation.pack(fill="x", pady=(3, 0))
     ligne_navigation.columnconfigure(0, weight=1)
@@ -441,9 +449,7 @@ def creer_interface(board):
     ui["next_button"].grid(row=0, column=1, sticky="ew", padx=(3, 0))
 
     tk.Frame(panel, bg=UI_BG).pack(fill="both", expand=True)
-    creer_bouton(panel, "Effacer tout le plateau", lambda: tout_effacer_depuis_interface(board), DANGER_BUTTON_BG, DANGER_TEXT)
-
-    ui["status_label"] = None
+    creer_bouton(panel, "Effacer tout le plateau", lambda: tout_effacer_depuis_interface(board), DANGER_BUTTON_BG)
 
     creer_panneau_infos(root)
     actualiser_interface()
@@ -451,14 +457,17 @@ def creer_interface(board):
 
 
 def couleur_case_normale(i, j):
+    """Choisit la couleur d'une cellule en simulation libre."""
     return LIVE_COLOR if state.grille[i][j] == 1 else ""
 
 
 def couleur_case_edition(i, j):
+    """Choisit la couleur d'une cellule pendant le dessin de la cible."""
     return TARGET_COLOR if state.cible[i][j] == 1 else ""
 
 
 def couleur_case_initiale(i, j):
+    """Montre la grille de départ en gardant la cible en repère discret."""
     vivant = state.grille[i][j]
     cible = state.cible[i][j]
     if vivant == 1 and cible == 1:
@@ -471,6 +480,7 @@ def couleur_case_initiale(i, j):
 
 
 def couleur_case_resultat(i, j):
+    """Compare visuellement le résultat obtenu avec la cible."""
     if state.resultat is None:
         return couleur_case_initiale(i, j)
 
@@ -486,10 +496,11 @@ def couleur_case_resultat(i, j):
 
 
 def couleur_case_evolution(i, j):
+    """Affiche une étape de l'évolution avec la cible en arrière-plan."""
     if state.evolution is None:
         return couleur_case_initiale(i, j)
 
-    courant = state.evolution[state.evolution_index][i][j]
+    courant = state.evolution[state.index_evolution][i][j]
     cible = state.cible[i][j]
     if courant == 1 and cible == 1:
         return INITIAL_AND_TARGET
@@ -501,10 +512,11 @@ def couleur_case_evolution(i, j):
 
 
 def rafraichir_plateau(board):
+    """Repeint chaque cellule selon la vue active."""
     if board is None:
         return
-    for i in range(ROWS):
-        for j in range(COLS):
+    for i in range(NB_LIGNES):
+        for j in range(NB_COLONNES):
             if state.mode_app == "normal" or state.vue == "normal":
                 couleur = couleur_case_normale(i, j)
             elif state.vue == "resultat":
@@ -520,6 +532,7 @@ def rafraichir_plateau(board):
 
 
 def actualiser_interface():
+    """Active, désactive et renomme les boutons selon l'état courant."""
     resultat_disponible = state.resultat is not None
     resolution = state.mode_app == "resolution"
 
@@ -530,14 +543,14 @@ def actualiser_interface():
     bouton = ui.get("start_solver_button")
     if bouton is not None and bouton.winfo_exists():
         bouton.configure(
-            text="Arrêter la recherche génétique" if state.solveur_actif else "Trouver une grille initiale",
+            text="Arrêter la recherche" if state.solveur_actif else "Chercher une grille de départ",
             state=tk.NORMAL if resolution else tk.DISABLED,
         )
 
     bouton = ui.get("normal_play_button")
     if bouton is not None and bouton.winfo_exists():
         bouton.configure(
-            text="Mettre la simulation en pause" if state.lecture else "Lire l'évolution du Jeu de la vie",
+            text="Mettre en pause" if state.lecture else "Lancer la simulation",
             state=tk.NORMAL if state.mode_app == "normal" else tk.DISABLED,
         )
 
@@ -558,7 +571,7 @@ def actualiser_interface():
 
     bouton = ui.get("evolution_button")
     if bouton is not None and bouton.winfo_exists():
-        bouton.configure(text="Arrêter la lecture de l'évolution" if state.evolution_active else "Rejouer l'évolution initiale -> cible")
+        bouton.configure(text="Arrêter la lecture" if state.lecture_evolution else "Rejouer l'évolution")
 
     progress = ui.get("progress")
     progress_label = ui.get("progress_label")
@@ -575,7 +588,7 @@ def actualiser_interface():
                     taille_zone(s.dernier_snapshot.zone),
                 )
             progress_label.configure(
-                text="Génération génétique {} / {} | erreur {} | exactitude {:.2f}%{}".format(
+                text="Recherche {} / {} | erreur {} | exactitude {:.2f}%{}".format(
                     s.generation,
                     s.config.nb_generations_max,
                     "?" if s.meilleure_erreur is None else f"{s.meilleure_erreur:.2f}",
@@ -588,12 +601,13 @@ def actualiser_interface():
 
 
 def texte_status():
+    """Prépare la ligne de statut principale."""
     if state.mode_app == "normal":
         return ""
 
     if state.solveur_actif and state.solveur is not None:
         s = state.solveur
-        return "Recherche : {} passage(s), génération {} | stagnation {}.".format(
+        return "Recherche : {} passage(s), génération {} | sans progrès {}.".format(
             state.k_inverse,
             s.generation,
             s.stagnation,
@@ -608,7 +622,8 @@ def texte_status():
     return ""
 
 
-def parser_steps_interface(texte):
+def parser_passages_interface(texte):
+    """Convertit le champ des passages en entier positif."""
     texte = texte.strip()
     if not texte:
         return 1
@@ -620,11 +635,12 @@ def parser_steps_interface(texte):
     return valeur
 
 
-def lire_steps_depuis_interface(board):
-    entree = ui.get("steps_entry")
+def lire_passages_depuis_interface(board):
+    """Lit le nombre de passages demandé dans l'interface."""
+    entree = ui.get("passages_entry")
     texte = entree.get() if entree is not None and entree.winfo_exists() else str(state.k_inverse)
     try:
-        state.k_inverse = parser_steps_interface(texte)
+        state.k_inverse = parser_passages_interface(texte)
     except ValueError:
         if board is not None:
             board.console("Nombre de passages invalide : entrez une seule valeur entière positive.")
@@ -634,29 +650,30 @@ def lire_steps_depuis_interface(board):
 
 
 def afficher_infos(board):
+    """Rafraîchit les lignes d'information sous la grille."""
     if state.mode_app == "normal":
-        afficher_ligne(board, 0, "Passage {} | cellules vivantes {}".format(state.generation_life, nombre_cellules_vivantes(state.grille)), IMPORTANT_TEXT)
+        afficher_ligne(board, 0, "Passage {} | cellules vivantes {}".format(state.generation_vie, nombre_cellules_vivantes(state.grille)), IMPORTANT_TEXT)
         afficher_ligne(board, 1, "")
         afficher_ligne(board, 2, "")
         afficher_ligne(board, 3, "")
     else:
         if state.vue == "evolution" and state.evolution is not None:
-            ligne_0 = "Lecture : passage {} / {}".format(state.evolution_index, len(state.evolution) - 1)
+            ligne_0 = "Lecture : passage {} / {}".format(state.index_evolution, len(state.evolution) - 1)
         elif state.solveur_actif and state.solveur is not None:
-            ligne_0 = "Test {} passage(s) | génération génétique {} | stagnation {}".format(
+            ligne_0 = "Recherche : {} passage(s) | génération {} | sans progrès {}".format(
                 state.k_inverse,
                 state.solveur.generation,
                 state.solveur.stagnation,
             )
         elif state.solveur is not None:
             erreur = "?" if state.solveur.meilleure_erreur is None else f"{state.solveur.meilleure_erreur:.2f}"
-            ligne_0 = "Meilleur test : {} passage(s) | erreur {} | exactitude {:.2f}%".format(
+            ligne_0 = "Meilleur résultat : {} passage(s) | erreur {} | exactitude {:.2f}%".format(
                 state.k_inverse,
                 erreur,
                 state.solveur.meilleur_score,
             )
         else:
-            ligne_0 = "Cellules cible : {}".format(nombre_cellules_vivantes(state.cible))
+            ligne_0 = "Cellules dans la cible : {}".format(nombre_cellules_vivantes(state.cible))
         afficher_ligne(board, 0, ligne_0, IMPORTANT_TEXT)
         afficher_ligne(board, 1, texte_status())
         if state.solveur is not None:
@@ -673,24 +690,26 @@ def afficher_infos(board):
                 ),
             )
         else:
-            afficher_ligne(board, 2, "Algo simplifié : zone active, élites, croisements, mutations.")
+            afficher_ligne(board, 2, "Recherche : zone active, élites, croisements, mutations.")
         afficher_ligne(board, 3, "")
 
     actualiser_interface()
 
 
 def boucle_animation_normale(board):
+    """Fait avancer automatiquement la simulation libre."""
     if not state.lecture or state.mode_app != "normal":
         return
 
     state.grille = generation_suivante(state.grille, state.config_recherche.bords_toriques)
-    state.generation_life += 1
+    state.generation_vie += 1
     rafraichir_plateau(board)
     afficher_infos(board)
     board.after(state.delai_animation, boucle_animation_normale, board)
 
 
 def lancer_ou_arreter_jeu_normal(board):
+    """Démarre ou met en pause la simulation libre."""
     if state.mode_app != "normal":
         return
     state.lecture = not state.lecture
@@ -700,16 +719,18 @@ def lancer_ou_arreter_jeu_normal(board):
 
 
 def avancer_jeu_normal(board):
+    """Avance la simulation libre d'un seul passage."""
     if state.mode_app != "normal":
         return
     state.lecture = False
     state.grille = generation_suivante(state.grille, state.config_recherche.bords_toriques)
-    state.generation_life += 1
+    state.generation_vie += 1
     rafraichir_plateau(board)
     afficher_infos(board)
 
 
 def boucle_solveur(board):
+    """Fait avancer la recherche par petits paquets pour garder l'interface fluide."""
     if not state.solveur_actif:
         rafraichir_plateau(board)
         afficher_infos(board)
@@ -723,7 +744,7 @@ def boucle_solveur(board):
             state.grille = copier_grille(state.solveur.meilleur_individu)
             state.resultat = copier_grille(state.solveur.meilleur_resultat)
             state.evolution = None
-            state.evolution_index = 0
+            state.index_evolution = 0
 
         if state.solveur.termine:
             state.solveur_actif = False
@@ -741,6 +762,7 @@ def boucle_solveur(board):
 
 
 def lancer_ou_arreter_solveur(board):
+    """Démarre ou arrête la recherche inverse."""
     if state.solveur_actif:
         state.solveur_actif = False
         rafraichir_plateau(board)
@@ -749,22 +771,22 @@ def lancer_ou_arreter_solveur(board):
 
     if state.mode_app != "resolution":
         return
-    if not lire_steps_depuis_interface(board):
+    if not lire_passages_depuis_interface(board):
         rafraichir_plateau(board)
         afficher_infos(board)
         return
     if grille_vide(state.cible):
         if board is not None:
-            board.console("Impossible de lancer le solveur : la cible est vide.")
-        state.message_recherche = "Impossible de lancer le solveur : la cible est vide."
+            board.console("Impossible de lancer la recherche : la cible est vide.")
+        state.message_recherche = "Impossible de lancer la recherche : la cible est vide."
         afficher_infos(board)
         return
 
     state.message_recherche = ""
-    state.evolution_active = False
+    state.lecture_evolution = False
     state.evolution = None
-    state.evolution_index = 0
-    state.evolution_id += 1
+    state.index_evolution = 0
+    state.id_evolution += 1
     state.solveur = initialiser_solveur(state.grille, state.cible, state.k_inverse, state.config_recherche)
     state.solveur_actif = True
     state.lecture = False
@@ -775,30 +797,32 @@ def lancer_ou_arreter_solveur(board):
 
 
 def remplir_initial_aleatoire(board):
-    state.grille = nouvelle_grille(0, ROWS, COLS)
-    for i in range(ROWS):
-        for j in range(COLS):
+    """Crée une grille de départ aléatoire en simulation libre."""
+    state.grille = nouvelle_grille(0, NB_LIGNES, NB_COLONNES)
+    for i in range(NB_LIGNES):
+        for j in range(NB_COLONNES):
             if random.random() < state.config_recherche.densite_initiale:
                 state.grille[i][j] = 1
-    state.generation_life = 0
+    state.generation_vie = 0
     state.resultat = None
     state.solveur = None
     state.solveur_actif = False
     state.evolution = None
-    state.evolution_active = False
-    state.evolution_id += 1
+    state.lecture_evolution = False
+    state.id_evolution += 1
     state.message_recherche = ""
     rafraichir_plateau(board)
     afficher_infos(board)
 
 
 def remplir_cible_aleatoire(board):
+    """Crée une cible aléatoire pour essayer rapidement la recherche."""
     if state.mode_app != "resolution":
         return
 
-    state.cible = nouvelle_grille(0, ROWS, COLS)
-    for i in range(ROWS):
-        for j in range(COLS):
+    state.cible = nouvelle_grille(0, NB_LIGNES, NB_COLONNES)
+    for i in range(NB_LIGNES):
+        for j in range(NB_COLONNES):
             if random.random() < state.config_recherche.densite_initiale:
                 state.cible[i][j] = 1
 
@@ -806,9 +830,9 @@ def remplir_cible_aleatoire(board):
     state.solveur = None
     state.solveur_actif = False
     state.evolution = None
-    state.evolution_index = 0
-    state.evolution_active = False
-    state.evolution_id += 1
+    state.index_evolution = 0
+    state.lecture_evolution = False
+    state.id_evolution += 1
     state.message_recherche = ""
     state.vue = "edition"
     rafraichir_plateau(board)
@@ -816,89 +840,96 @@ def remplir_cible_aleatoire(board):
 
 
 def tout_effacer():
-    state.grille = nouvelle_grille(0, ROWS, COLS)
-    state.cible = nouvelle_grille(0, ROWS, COLS)
+    """Remet les grilles et la recherche dans un état vide."""
+    state.grille = nouvelle_grille(0, NB_LIGNES, NB_COLONNES)
+    state.cible = nouvelle_grille(0, NB_LIGNES, NB_COLONNES)
     state.resultat = None
     state.solveur = None
     state.solveur_actif = False
     state.evolution = None
-    state.evolution_index = 0
-    state.evolution_active = False
-    state.evolution_id += 1
-    state.generation_life = 0
+    state.index_evolution = 0
+    state.lecture_evolution = False
+    state.id_evolution += 1
+    state.generation_vie = 0
     state.lecture = False
     state.message_recherche = ""
     state.vue = "normal" if state.mode_app == "normal" else "edition"
 
 
 def tout_effacer_depuis_interface(board):
+    """Efface puis rafraîchit tout ce qui est visible."""
     tout_effacer()
     rafraichir_plateau(board)
     afficher_infos(board)
 
 
 def afficher_vue(board, vue):
+    """Affiche la cible, la grille de départ ou le résultat."""
     if vue in ("initial", "resultat") and state.resultat is None:
         return
-    state.evolution_active = False
+    state.lecture_evolution = False
     state.vue = vue
     rafraichir_plateau(board)
     afficher_infos(board)
 
 
 def lancer_ou_arreter_evolution(board):
+    """Lance ou arrête la lecture de l'évolution trouvée."""
     if state.resultat is None:
         return
 
-    if state.evolution_active:
-        state.evolution_active = False
+    if state.lecture_evolution:
+        state.lecture_evolution = False
         afficher_infos(board)
         return
 
     state.evolution = historique_evolution(state.grille, state.k_inverse, state.config_recherche.bords_toriques)
-    state.evolution_index = 0
-    state.evolution_active = True
+    state.index_evolution = 0
+    state.lecture_evolution = True
     state.vue = "evolution"
-    state.evolution_id += 1
-    identifiant = state.evolution_id
+    state.id_evolution += 1
+    identifiant = state.id_evolution
     avancer_evolution(board, identifiant)
 
 
 def avancer_evolution(board, identifiant):
-    if not state.evolution_active or state.evolution is None or identifiant != state.evolution_id:
+    """Passe automatiquement à l'étape suivante de l'évolution."""
+    if not state.lecture_evolution or state.evolution is None or identifiant != state.id_evolution:
         return
 
     state.vue = "evolution"
     rafraichir_plateau(board)
     afficher_infos(board)
 
-    if state.evolution_index >= len(state.evolution) - 1:
-        state.evolution_active = False
+    if state.index_evolution >= len(state.evolution) - 1:
+        state.lecture_evolution = False
         afficher_infos(board)
         return
 
-    state.evolution_index += 1
+    state.index_evolution += 1
     board.after(DELAI_EVOLUTION_MS, avancer_evolution, board, identifiant)
 
 
 def deplacer_evolution(board, delta):
+    """Déplace manuellement la lecture d'un passage en avant ou en arrière."""
     if state.evolution is None:
         if state.resultat is None:
             return
         state.evolution = historique_evolution(state.grille, state.k_inverse, state.config_recherche.bords_toriques)
-        state.evolution_index = 0
+        state.index_evolution = 0
 
-    state.evolution_active = False
-    state.evolution_index = max(0, min(len(state.evolution) - 1, state.evolution_index + delta))
+    state.lecture_evolution = False
+    state.index_evolution = max(0, min(len(state.evolution) - 1, state.index_evolution + delta))
     state.vue = "evolution"
     rafraichir_plateau(board)
     afficher_infos(board)
 
 
 def basculer_vue(board=None):
+    """Bascule entre la grille de départ et le résultat obtenu."""
     if state.resultat is None:
         return
-    state.evolution_active = False
+    state.lecture_evolution = False
     state.vue = "initial" if state.vue == "resultat" else "resultat"
     if board is not None:
         rafraichir_plateau(board)
@@ -906,9 +937,10 @@ def basculer_vue(board=None):
 
 
 def gestion_souris(board, event):
+    """Ajoute ou retire une cellule quand l'utilisateur clique sur la grille."""
     ligne = event["row"]
     col = event["col"]
-    if not (0 <= ligne < ROWS and 0 <= col < COLS):
+    if not (0 <= ligne < NB_LIGNES and 0 <= col < NB_COLONNES):
         return
     if state.mode_app == "resolution" and state.solveur_actif:
         return
@@ -923,8 +955,8 @@ def gestion_souris(board, event):
     state.solveur = None
     state.solveur_actif = False
     state.evolution = None
-    state.evolution_active = False
-    state.evolution_id += 1
+    state.lecture_evolution = False
+    state.id_evolution += 1
     state.message_recherche = ""
     state.vue = "normal" if state.mode_app == "normal" else "edition"
 
@@ -933,11 +965,12 @@ def gestion_souris(board, event):
 
 
 def gestion_clavier(board, event):
+    """Gère les raccourcis clavier principaux."""
     touche = event["keysym"]
     t = touche.lower()
 
     if t == "m":
-        ui["mode_var"].set("Jeu normal" if state.mode_app == "resolution" else "Résolution")
+        ui["mode_var"].set("Simulation libre" if state.mode_app == "resolution" else "Recherche inverse")
         changer_mode(board)
     elif state.mode_app == "normal":
         if t == "space":
@@ -963,30 +996,32 @@ def gestion_clavier(board, event):
             lancer_ou_arreter_evolution(board)
         elif t == "escape":
             state.solveur_actif = False
-            state.evolution_active = False
+            state.lecture_evolution = False
 
     rafraichir_plateau(board)
     afficher_infos(board)
 
 
 def initialiser(board):
+    """Prépare l'application au démarrage."""
     tout_effacer()
     state.mode_app = "resolution"
     state.vue = "edition"
     creer_interface(board)
     rafraichir_plateau(board)
     afficher_infos(board)
-    board.console("Version simplifiée prête.")
+    board.console("Application prête.")
     board.console("Dessinez une cible, choisissez un nombre de passages, puis lancez la recherche.")
 
 
 def run_app(eniseboard):
+    """Lance la fenêtre Eniseboard."""
     eniseboard(
-        hsize=COLS,
-        vsize=ROWS,
+        hsize=NB_COLONNES,
+        vsize=NB_LIGNES,
         cell=CELL_SIZE,
         grid=True,
-        title="Chasseur de motifs simplifié",
+        title="Chasseur de motifs",
         bgcolor=BG_COLOR,
         info=False,
         infoPlace="down",

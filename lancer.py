@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Point d'entrée principal du chasseur de motifs du Jeu de la vie."""
+"""Point d'entrée du chasseur de motifs."""
 
 try:
     from eniseboard import eniseboard
 except ImportError:
     eniseboard = None
 
-from ui_app import run_app
+try:
+    from .interface_application import run_app
+except ImportError:
+    from interface_application import run_app
 
 
 def main():
+    """Vérifie la dépendance graphique puis lance l'application."""
     if eniseboard is None:
         raise SystemExit("eniseboard n'est pas installé. Lancez : pip install eniseboard")
 
