@@ -1,12 +1,10 @@
-# Notes d'oral - Life Pattern Hunter
+# Notes d'oral - Reverse Game of Life
 
-Durée visée : 7 à 10 minutes.
-
-Objectif : notes orales concises, avec des phrases scientifiques, directes et assez détaillées.
+7 à 10 minutes.
 
 ## Diapo 1 - Définition du Jeu de la vie
 
-**Plan prof :** (a) présentation rapide de GoL
+**Plan :** (a) présentation rapide de GoL
 
 **À mettre sur la diapo :**
 
@@ -37,7 +35,7 @@ Il n'y a pas de joueur. L'évolution dépend uniquement des règles.
 
 ## Diapo 2 - Règles locales
 
-**Plan prof :** (a) règles du GoL
+**Plan :** (a) règles du GoL
 
 **À mettre sur la diapo :**
 
@@ -78,7 +76,7 @@ elif grille[i][j] == 0 and voisins == 3:
 
 ## Diapo 3 - Problème direct et problème inverse
 
-**Plan prof :** (a) déterminisme + enjeu inverse
+**Plan :** (a) déterminisme + enjeu inverse
 
 **À mettre sur la diapo :**
 
@@ -102,7 +100,7 @@ L'algorithme ne remonte pas le temps par une formule exacte. Il teste des grille
 
 ## Diapo 4 - Taille de l'espace de recherche
 
-**Plan prof :** (a) difficulté du problème
+**Plan :** (a) difficulté du problème
 
 **À mettre sur la diapo :**
 
@@ -130,7 +128,7 @@ grille candidate -> simulation X générations -> comparaison avec la cible
 
 ## Diapo 5 - Familles d'algorithmes possibles
 
-**Plan prof :** (b) familles d'algorithmes et choix
+**Plan :** (b) familles d'algorithmes et choix
 
 **À mettre sur la diapo :**
 
@@ -155,7 +153,7 @@ Le choix est aussi pédagogique. On peut expliquer clairement la population, le 
 
 ## Diapo 6 - Principe de l'algorithme génétique
 
-**Plan prof :** (c) présentation théorique de l'algorithme
+**Plan :** (c) présentation théorique de l'algorithme
 
 **À mettre sur la diapo :**
 
@@ -184,7 +182,7 @@ population -> évaluation -> sélection -> nouvelle population.
 
 ## Diapo 7 - Score et zone active
 
-**Plan prof :** (c) détails théoriques
+**Plan :** (c) détails théoriques
 
 **À mettre sur la diapo :**
 
@@ -217,7 +215,7 @@ et les cellules en trop colorées différemment.
 
 ## Diapo 8 - Croisement, mutation et pseudo-code
 
-**Plan prof :** (c) pseudo-code
+**Plan :** (c) pseudo-code
 
 **À mettre sur la diapo :**
 
@@ -256,7 +254,7 @@ qui changent d'état après mutation.
 
 ## Diapo 9 - Complexité théorique
 
-**Plan prof :** (c) complexité théorique
+**Plan :** (c) complexité théorique
 
 **À mettre sur la diapo :**
 
@@ -304,7 +302,7 @@ La zone active réduit l'espace de recherche, mais la simulation actuelle parcou
 
 ## Diapo 10 - Implémentation Python
 
-**Plan prof :** (d) algorithme implémenté
+**Plan :** (d) algorithme implémenté
 
 **À mettre sur la diapo :**
 
@@ -354,7 +352,7 @@ Le but est d'obtenir un algorithme lisible, testable et cohérent avec l'analyse
 
 ## Diapo 11 - Complexité pratique
 
-**Plan prof :** (e) complexité en pratique
+**Plan :** (e) complexité en pratique
 
 **À mettre sur la diapo :**
 
