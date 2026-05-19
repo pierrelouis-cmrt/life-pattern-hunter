@@ -1,10 +1,10 @@
-# Chasseur de motifs du Jeu de la vie
+# Conway's Reverse Game of Life
 
 Application Tkinter/Eniseboard pour dessiner une cible du Jeu de la vie et
 chercher une grille de départ qui peut la produire après quelques passages.
 
 ## Lancer
-
+    
 ```bash
 python3.10 lancer.py
 ```
